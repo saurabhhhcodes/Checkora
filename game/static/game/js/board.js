@@ -202,6 +202,9 @@
             let gameOver = false;
             let aiThinking = false;
             let aiRequestSeq = 0; // Sequence token to cancel stale AI responses
+            const AI_MOVE_TIMEOUT_MS = 15000;
+            const AI_MOVE_MAX_ATTEMPTS = 2;
+            const AI_MOVE_RETRY_DELAY_MS = 600;
 
             let pgnDownloadTimeout = null;
             let fenCopyTimeout = null;
@@ -251,15 +254,33 @@
                 return (await fetch(url)).json();
             }
 
-            async function post(url, body) {
-                return (await fetch(url, {
+            function sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            async function post(url, body, options = {}) {
+                const { timeoutMs } = options;
+                const controller = typeof AbortController !== 'undefined' && timeoutMs
+                    ? new AbortController()
+                    : null;
+                const timeoutId = controller
+                    ? setTimeout(() => controller.abort(), timeoutMs)
+                    : null;
+
+                try {
+                    const response = await fetch(url, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': csrf()
                     },
-                    body: JSON.stringify(body)
-                })).json();
+                    body: JSON.stringify(body),
+                    signal: controller ? controller.signal : undefined
+                    });
+                    return await response.json();
+                } finally {
+                    if (timeoutId) clearTimeout(timeoutId);
+                }
             }
 
             function isAITurn() {
@@ -897,8 +918,17 @@
                         return;
                     }
 
-                    const data = await post('/api/ai-move/', {});
-                    clearInterval(thinkingInterval); // fix: clear after API call completes, not before
+                    let data = null;
+                    for (let attempt = 1; attempt <= AI_MOVE_MAX_ATTEMPTS; attempt++) {
+                        try {
+                            data = await post('/api/ai-move/', {}, { timeoutMs: AI_MOVE_TIMEOUT_MS });
+                            break;
+                        } catch (error) {
+                            if (attempt >= AI_MOVE_MAX_ATTEMPTS) throw error;
+                            showStatus('AI move timed out. Retrying...', true);
+                            await sleep(AI_MOVE_RETRY_DELAY_MS);
+                        }
+                    }
 
                     // Abort if sequence is no longer current after API call completes
                     if (seq !== aiRequestSeq) {
@@ -944,12 +974,17 @@
                             if (a11yMsg) announceMove(a11yMsg);
                         }
                     } else {
-                        showStatus(data.message, true);
+                        showStatus(data.message || 'AI could not make a move. Please try again.', true);
                     }
                 } catch (e) {
-                    clearInterval(thinkingInterval);
-                    await handleReconnect();
+                    if (e && e.name === 'AbortError') {
+                        showStatus('AI move timed out. Please try another move or refresh the game.', true);
+                    } else {
+                        showStatus('AI move failed. Reconnecting...', true);
+                        await handleReconnect();
+                    }
                 } finally {
+                    clearInterval(thinkingInterval);
                     if (seq === aiRequestSeq) {
                         aiThinking = false;
                     }
@@ -2200,11 +2235,9 @@ if (leaveConfirmNo) leaveConfirmNo.addEventListener('click', () => {
                 }
             });
             if (typeof module !== "undefined" && module.exports) {
-                module.exports = { pColor, getSquareLabel, formatTime };
+                module.exports = { pColor, getSquareLabel, formatTime, post };
             } else {
                 loadGame();
             }
 
 })();
-
-

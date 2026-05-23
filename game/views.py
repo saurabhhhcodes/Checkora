@@ -16,6 +16,7 @@ from django.contrib.auth.forms import AuthenticationForm
 from smtplib import SMTPException
 from django.core.mail import BadHeaderError, send_mail
 from django.contrib import messages
+from django.db import DatabaseError
 from django.db.models import F, Q
 from .forms import CustomUserCreationForm
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
@@ -752,29 +753,51 @@ def logout_view(request):
 
 
 # Protect the stats page with login requirement
+def _empty_stats_context(error_message=None):
+    return {
+        'recent': [],
+        'ai_total': 0,
+        'user_ai_wins': 0,
+        'ai_wins': 0,
+        'ai_draws': 0,
+        'win_percentage': 0,
+        'stats_error': error_message,
+    }
+
+
 @login_required
 def stats_view(request):
     """Display game statistics."""
-    # Only show real database records linked to the logged-in user
-    user_results = GameResult.objects.filter(
-        user=request.user
-    ).exclude(mode__in=['', None])
+    try:
+        # Only show real database records linked to the logged-in user.
+        user_results = GameResult.objects.filter(
+            user=request.user
+        ).exclude(mode__in=['', None])
 
-    recent = user_results.order_by('-played_at')[:20]
-    ai_results = user_results.filter(mode='ai')
+        recent = user_results.order_by('-played_at')[:20]
+        ai_results = user_results.filter(mode='ai')
 
-    # If winner == player_color, the user won
-    user_ai_wins = ai_results.filter(winner=F('player_color')).count()
-    # If winner != player_color and not a draw, the AI won
-    ai_wins = ai_results.filter(
-        Q(winner='white', player_color='black') |
-        Q(winner='black', player_color='white')
-    ).count()
+        # If winner == player_color, the user won.
+        user_ai_wins = ai_results.filter(winner=F('player_color')).count()
+        # If winner != player_color and not a draw, the AI won.
+        ai_wins = ai_results.filter(
+            Q(winner='white', player_color='black') |
+            Q(winner='black', player_color='white')
+        ).count()
 
-    ai_draws = ai_results.filter(winner='draw').count()
-    ai_total = ai_results.count()
+        ai_draws = ai_results.filter(winner='draw').count()
+        ai_total = ai_results.count()
+    except DatabaseError:
+        logger.exception('Failed to load stats for user_id=%s', request.user.id)
+        return render(
+            request,
+            'game/stats.html',
+            _empty_stats_context(
+                'Stats are temporarily unavailable. Please try again later.'
+            ),
+        )
 
-    # Handle explicit edge cases (e.g. division by zero for win rate)
+    # Handle explicit edge cases (e.g. division by zero for win rate).
     win_percentage = (user_ai_wins / ai_total * 100) if ai_total > 0 else 0
 
     return render(request, 'game/stats.html', {
@@ -784,6 +807,7 @@ def stats_view(request):
         'ai_wins': ai_wins,
         'ai_draws': ai_draws,
         'win_percentage': round(win_percentage, 2),
+        'stats_error': None,
     })
 
 @csrf_exempt

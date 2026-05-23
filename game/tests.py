@@ -7,6 +7,7 @@ from unittest import mock
 
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.db import DatabaseError
 from django.urls import reverse
 from django.test import SimpleTestCase, TestCase, override_settings
 
@@ -1020,6 +1021,20 @@ class StatsCleanupTest(TestCase):
         response = self.client.get('/stats/')
         self.assertNotContains(response, 'Checkmate')
         self.assertContains(response, 'No games played yet.')
+
+    def test_stats_database_error_renders_fallback(self):
+        """Stats page should render a safe fallback instead of a 500."""
+        self.client.login(username='usera', password='password123')
+
+        with mock.patch(
+            'game.views.GameResult.objects.filter',
+            side_effect=DatabaseError('stats query failed'),
+        ):
+            response = self.client.get('/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Stats are temporarily unavailable.')
+        self.assertContains(response, '<div class="num">0</div>', count=4)
 
 class StaleGameCleanupTest(TestCase):
     def setUp(self):

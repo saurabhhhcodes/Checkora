@@ -28,6 +28,11 @@
     <h1>CHECK<span>ORA</span> &mdash; Game Statistics</h1>
 
     <h2>AI Game Summary</h2>
+    {% if stats_error %}
+    <div class="empty">
+        <p>{{ stats_error }}</p>
+    </div>
+    {% endif %}
     <div class="summary">
         <div class="card"><div class="num">{{ ai_total }}</div><div class="label">Total AI Games</div></div>
         <div class="card"><div class="num">{{ user_ai_wins }}</div><div class="label">User Wins vs AI</div></div>

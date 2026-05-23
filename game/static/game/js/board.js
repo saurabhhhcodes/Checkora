@@ -363,6 +363,29 @@
                 }
                 return b;
             }
+
+            function isBoardCoordinate(pair) {
+                return Array.isArray(pair) &&
+                    pair.length === 2 &&
+                    pair.every(value => Number.isInteger(value) && value >= 0 && value < 8);
+            }
+
+            function getLastMoveFromHistory(moveHistory) {
+                if (!Array.isArray(moveHistory) || moveHistory.length === 0) return null;
+
+                const move = moveHistory[moveHistory.length - 1];
+                if (!move || typeof move !== 'object') return null;
+
+                if (isBoardCoordinate(move.from) && isBoardCoordinate(move.to)) {
+                    return { from: move.from, to: move.to };
+                }
+
+                const from = [move.from_row, move.from_col];
+                const to = [move.to_row, move.to_col];
+                return isBoardCoordinate(from) && isBoardCoordinate(to)
+                    ? { from, to }
+                    : null;
+            }
             const whiteNameInput = document.getElementById('whiteNameInput');
             const blackNameInput = document.getElementById('blackNameInput');
 
@@ -399,6 +422,7 @@
                 whiteTime = data.white_time;
                 blackTime = data.black_time;
                 paused = data.paused;
+                lastMove = getLastMoveFromHistory(data.move_history);
 
                 gameMode = data.mode || 'pvp';
                 // Sync UI with current game mode
@@ -889,9 +913,9 @@
                             updateMaterialUI(board);
                         let a11yMsg = '';
                         if (data.move_history && data.move_history.length > 0) {
-                            const lastMove = data.move_history[data.move_history.length - 1].notation;
+                            const lastNotation = data.move_history[data.move_history.length - 1].notation;
                             const playedColor = turn === 'white' ? 'Black' : 'White';
-                            a11yMsg = `${playedColor} played ${lastMove}. `;
+                            a11yMsg = `${playedColor} played ${lastNotation}. `;
                         }
 
                         const gameEnded = handleGameStatus(data.game_status, data.draw_reason);
@@ -991,8 +1015,8 @@
                             updateMaterialUI(board);
                         let a11yMsg = '';
                         if (data.move_history && data.move_history.length > 0) {
-                            const lastMove = data.move_history[data.move_history.length - 1].notation;
-                            a11yMsg = `AI played ${lastMove}. `;
+                            const lastNotation = data.move_history[data.move_history.length - 1].notation;
+                            a11yMsg = `AI played ${lastNotation}. `;
                         }
 
                         const gameEnded = handleGameStatus(data.game_status, data.draw_reason);
@@ -2388,5 +2412,4 @@ if (leaveConfirmNo) leaveConfirmNo.addEventListener('click', () => {
             });
 
 })();
-
 

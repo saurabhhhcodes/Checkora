@@ -2,8 +2,10 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from smtplib import SMTPException
 from unittest import mock
 
@@ -80,12 +82,9 @@ class EnginePathResolutionTest(SimpleTestCase):
 class EngineValidateLegalityTest(SimpleTestCase):
     """Direct engine validation should reject self-check moves."""
 
-    def _run_python_engine(self, command):
-        engine_path = os.path.join(
-            settings.BASE_DIR, 'game', 'engine', 'main.py'
-        )
+    def _run_engine(self, command, engine_path):
         result = subprocess.run(
-            [sys.executable, engine_path],
+            ChessGame._build_engine_command(engine_path),
             input=f'{command}\n',
             text=True,
             capture_output=True,
@@ -93,9 +92,9 @@ class EngineValidateLegalityTest(SimpleTestCase):
         )
         return result.stdout.strip()
 
-    def test_validate_rejects_move_that_exposes_own_king(self):
-        board = ''.join(
-            [
+    def _king_pin_board(self):
+        return ''.join(
+            (
                 'k...r...',
                 '........',
                 '........',
@@ -104,31 +103,66 @@ class EngineValidateLegalityTest(SimpleTestCase):
                 '........',
                 '....R...',
                 '....K...',
-            ]
+            )
         )
 
-        response = self._run_python_engine(
-            f'VALIDATE {board} - white -1 -1 6 4 6 3'
+    def _python_engine_path(self):
+        return os.path.join(settings.BASE_DIR, 'game', 'engine', 'main.py')
+
+    def _compiled_cpp_engine_path(self, output_dir):
+        compiler = shutil.which('g++')
+        if compiler is None:
+            self.skipTest('g++ is required for C++ engine parity coverage')
+
+        binary_path = os.path.join(output_dir, 'checkora-engine')
+        source_path = os.path.join(
+            settings.BASE_DIR, 'game', 'engine', 'main.cpp'
+        )
+        subprocess.run(
+            [
+                compiler,
+                '-std=c++17',
+                '-O2',
+                '-Wall',
+                '-Wextra',
+                source_path,
+                '-o',
+                binary_path,
+            ],
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        return binary_path
+
+    def test_validate_rejects_move_that_exposes_own_king(self):
+        board = self._king_pin_board()
+
+        response = self._run_engine(
+            f'VALIDATE {board} - white -1 -1 6 4 6 3',
+            self._python_engine_path(),
         )
 
         self.assertEqual(response, 'INVALID Leaves king in check')
 
-    def test_validate_allows_move_that_keeps_king_shielded(self):
-        board = ''.join(
-            [
-                'k...r...',
-                '........',
-                '........',
-                '........',
-                '........',
-                '........',
-                '....R...',
-                '....K...',
-            ]
-        )
+    def test_validate_rejects_move_that_exposes_own_king_on_cpp_engine(self):
+        board = self._king_pin_board()
 
-        response = self._run_python_engine(
-            f'VALIDATE {board} - white -1 -1 6 4 5 4'
+        with tempfile.TemporaryDirectory() as output_dir:
+            engine_path = self._compiled_cpp_engine_path(output_dir)
+            response = self._run_engine(
+                f'VALIDATE {board} - white -1 -1 6 4 6 3',
+                engine_path,
+            )
+
+        self.assertEqual(response, 'INVALID Leaves king in check')
+
+    def test_validate_allows_move_that_keeps_king_shielded(self):
+        board = self._king_pin_board()
+
+        response = self._run_engine(
+            f'VALIDATE {board} - white -1 -1 6 4 5 4',
+            self._python_engine_path(),
         )
 
         self.assertEqual(response, 'VALID')

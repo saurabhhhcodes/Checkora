@@ -105,7 +105,7 @@ cd Checkora
 **On Windows:**
 ```powershell
 python -m venv venv
-venv\Scripts\activate
+venv\Scripts\Activate.ps1
 ```
 
 If you see the error *"Script execution is disabled on this system"*, run the following command in PowerShell before activating:

@@ -239,6 +239,7 @@ class RegistrationViewTest(TestCase):
         self.assertNotIn('registration_user_id', self.client.session)
         self.assertNotIn('registration_otp_hash', self.client.session)
         self.assertNotIn('last_otp_time', self.client.session)
+        self.assertNotIn('otp_created_at', self.client.session)
 
     def test_duplicate_email_registration_fails(self):
         User.objects.create_user(

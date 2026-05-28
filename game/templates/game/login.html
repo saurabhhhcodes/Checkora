@@ -10,8 +10,14 @@
     <link rel="stylesheet" href="{% static 'game/css/toast.css' %}">
 </head>
 <body class="login-page">
-    <!-- Back-to-home arrow -->
-    <a href="{% url 'landing' %}" class="back-home" aria-label="Back to home">&larr; Home</a>
+    <!-- Upgraded Back-to-home Button -->
+    <a href="{% url 'landing' %}" class="back-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>Back to Home</span>
+    </a>
 
     <div class="header">
         <div class="logo-container">
@@ -24,13 +30,13 @@
     <div class="auth-card">
         <form method="POST">
             {% csrf_token %}
-            
+
             {% include 'game/includes/messages.html' %}
-            
+
             {% if form.non_field_errors %}
                 {{ form.non_field_errors }}
             {% endif %}
-            
+
             {% for field in form %}
                 <div class="form-group">
                     <label for="{{ field.id_for_label }}">{{ field.label }}</label>
@@ -40,10 +46,15 @@
                     {% endif %}
                 </div>
             {% endfor %}
-            
+            <div class="remember-me">
+                <label>
+                    <input type="checkbox" name="remember_me">
+                    Remember Me
+                </label>
+            </div>
             <button type="submit" class="btn btn-gold">Sign In</button>
         </form>
-        
+
         <div class="auth-footer">
             Don't have an account? <a href="{% url 'register' %}">Register here</a>
             <br><br>

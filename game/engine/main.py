@@ -203,7 +203,7 @@ def valid_queen(fr, fc, tr, tc):
 def valid_king(color, fr, fc, tr, tc):
     if abs(tr - fr) <= 1 and abs(tc - fc) <= 1:
         return True
-        
+
     if fr == tr and abs(tc - fc) == 2:
         if color == 'white' and fr == 7 and fc == 4:
             if tc == 6 and W_K_CASTLE and is_empty(BOARD[7][5]) and is_empty(BOARD[7][6]):
@@ -219,7 +219,7 @@ def valid_king(color, fr, fc, tr, tc):
             if tc == 2 and B_Q_CASTLE and is_empty(BOARD[0][3]) and is_empty(BOARD[0][2]) and is_empty(BOARD[0][1]):
                 if not is_square_attacked(0, 4, 'white') and not is_square_attacked(0, 3, 'white') and not is_square_attacked(0, 2, 'white'):
                     return True
-                    
+
     return False
 
 
@@ -613,6 +613,27 @@ def minimax(depth, alpha, beta, maximizing):
     return best_value
 
 
+def is_insufficient_material():
+    """Checks if the current board state is a draw due to insufficient material.
+    Simple cases: K vs K, K+N vs K, K+B vs K.
+    """
+    total_minor = 0
+    for row in range(8):
+        for col in range(8):
+            p = BOARD[row][col]
+            if p == '.':
+                continue
+            type_ = p.lower()
+            if type_ == 'k':
+                continue
+            # If there's a pawn, rook, or queen, checkmate is possible
+            if type_ in ('p', 'r', 'q'):
+                return False
+            total_minor += 1
+    # Draw if total non-king pieces is 0 or 1
+    return total_minor <= 1
+
+
 def handle_status(turn):
     opponent = 'black' if turn == 'white' else 'white'
     king_row, king_col = find_king(turn)
@@ -628,7 +649,12 @@ def handle_status(turn):
         print('STATUS CHECKMATE' if in_check else 'STATUS STALEMATE')
         return
 
-    print('STATUS CHECK' if in_check else 'STATUS OK')
+    if in_check:
+        print('STATUS CHECK')
+    elif is_insufficient_material():
+        print('STATUS DRAW')
+    else:
+        print('STATUS OK')
 
 
 def handle_bestmove(turn, depth):

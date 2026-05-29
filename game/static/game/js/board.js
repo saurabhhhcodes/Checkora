@@ -302,8 +302,7 @@
             
             // post() uses csrf()
             function csrf() {
-                const m = document.cookie.match(/csrftoken=([^;]+)/);
-                return m ? decodeURIComponent(m[1]) : '';  // ← returns empty on Vercel
+                return document.querySelector('meta[name="csrf-token"]')?.content || '';
             }
 
             async function get(url) {
@@ -1367,11 +1366,25 @@
                     const moveNum = Math.floor(whiteIdx / 2) + 1;
                     const row = document.createElement('div');
                     row.className = 'move-row';
-                    row.innerHTML = `
-                        <span class="move-num">${moveNum}.</span>
-                        <span class="move-white">${history[whiteIdx]?.notation ?? ''}</span>
-                        ${history[blackIdx] ? `<span class="move-black">${history[blackIdx].notation}</span>` : ''}
-                    `;
+
+                    const numSpan = document.createElement('span');
+                    numSpan.className = 'move-num';
+                    numSpan.textContent = `${moveNum}.`;
+
+                    const whiteSpan = document.createElement('span');
+                    whiteSpan.className = 'move-white';
+                    whiteSpan.textContent = history[whiteIdx]?.notation ?? '';
+
+                    row.appendChild(numSpan);
+                    row.appendChild(whiteSpan);
+
+                    if (history[blackIdx]) {
+                        const blackSpan = document.createElement('span');
+                        blackSpan.className = 'move-black';
+                        blackSpan.textContent = history[blackIdx].notation;
+                        row.appendChild(blackSpan);
+                    }
+
                     movesEl.appendChild(row);
                 }
             }
@@ -2158,12 +2171,50 @@
             WELCOME & CONFIRMATION LOGIC
             ========================================================== */
             let confirmCallback = null;
+
+            /**
+             * Safely render a confirm-dialog message that may contain a small
+             * whitelist of formatting tags (<br>, <b>, <div> with an inline
+             * style). All other HTML is treated as plain text, preventing XSS
+             * even if a future caller accidentally passes server-controlled data.
+             */
+            function setSafeConfirmHTML(el, html) {
+                // Parse into an inert document so no scripts execute during parsing.
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const allowedTags = new Set(['BR', 'B', 'DIV', 'SPAN']);
+                const allowedStyles = ['line-height', 'font-size'];
+
+                function sanitizeNode(src, dest) {
+                    src.childNodes.forEach(node => {
+                        if (node.nodeType === Node.TEXT_NODE) {
+                            dest.appendChild(document.createTextNode(node.textContent));
+                        } else if (node.nodeType === Node.ELEMENT_NODE && allowedTags.has(node.tagName)) {
+                            const clone = document.createElement(node.tagName);
+                            // Only copy safe inline-style properties, nothing else.
+                            if (node.style) {
+                                allowedStyles.forEach(prop => {
+                                    if (node.style[prop]) clone.style[prop] = node.style[prop];
+                                });
+                            }
+                            sanitizeNode(node, clone);
+                            dest.appendChild(clone);
+                        } else {
+                            // Unknown tag: render its text content only.
+                            sanitizeNode(node, dest);
+                        }
+                    });
+                }
+
+                el.textContent = '';
+                sanitizeNode(doc.body, el);
+            }
+
             function showConfirm(title, msg, callback, titleColor = '#ff6b6b') {
                 if (confirmTitle) {
                     confirmTitle.textContent = title;
                     confirmTitle.style.color = titleColor;
                 }
-                if (confirmMessage) confirmMessage.innerHTML = msg;
+                if (confirmMessage) setSafeConfirmHTML(confirmMessage, msg);
                 confirmCallback = callback;
                 confirmOverlay.classList.add('active');
             }

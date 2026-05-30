@@ -2217,7 +2217,30 @@
                 }
                 if (confirmMessage) setSafeConfirmHTML(confirmMessage, msg);
                 confirmCallback = callback;
+                resetConfirmButtons();
                 confirmOverlay.classList.add('active');
+            }
+
+            function acceptConfirm() {
+                confirmOverlay.classList.remove('active');
+                if (confirmCallback) confirmCallback();
+                confirmCallback = null;
+            }
+
+            function cancelConfirm() {
+                confirmOverlay.classList.remove('active');
+                confirmCallback = null;
+            }
+
+            function resetConfirmButtons() {
+                if (confirmYesBtn) {
+                    confirmYesBtn.textContent = 'Yes';
+                    confirmYesBtn.onclick = acceptConfirm;
+                }
+                if (confirmNoBtn) {
+                    confirmNoBtn.textContent = 'Cancel';
+                    confirmNoBtn.onclick = cancelConfirm;
+                }
             }
 
             function showSideSelectionModal(onChoose) {
@@ -2784,15 +2807,7 @@
                 queueAIMoveIfNeeded();
             };
 
-            if (confirmYesBtn) confirmYesBtn.onclick = () => {
-                confirmOverlay.classList.remove('active');
-                if (confirmCallback) confirmCallback();
-                confirmCallback = null;
-            };
-            if (confirmNoBtn) confirmNoBtn.onclick = () => {
-                confirmOverlay.classList.remove('active');
-                confirmCallback = null;
-            };
+            resetConfirmButtons();
 
             if (newPvPBtn) newPvPBtn.onclick = () => {
                 // Clear any lingering celebration effects

@@ -80,6 +80,15 @@
                 }
             }
 
+            function resetDailyPuzzleState() {
+                dailyPuzzleMode = false;
+                currentPuzzle = null;
+                puzzleMoveIndex = 0;
+                if (restartPuzzleBtn) {
+                    restartPuzzleBtn.style.display = 'none';
+                }
+            }
+
             // =============================================
             // Daily Puzzle
             // =============================================
@@ -152,7 +161,10 @@
                     "pvp",
                     "white",
                     "medium",
-                    currentPuzzle.fen
+                    currentPuzzle.fen,
+                    null,
+                    null,
+                    true
                 );
                 const today = new Date().toLocaleDateString();
                 showStatus(
@@ -832,6 +844,10 @@
                         // ADD THESE:
                         d.draggable = true;
                         d.ondragstart = e => {
+                            if (blockHistoryReviewInput()) {
+                                return e.preventDefault();
+                            }
+
                             const isPremoveMode = gameMode === 'ai' && turn !== playerColor;
                             const vBoard = isPremoveMode ? getVirtualBoard() : board;
                             const piece = vBoard[r][c];
@@ -1130,6 +1146,7 @@
 
             async function tryMove(fr, fc, tr, tc) {
                 if (paused || gameOver) return;
+                if (blockHistoryReviewInput()) return;
 
                 const isPremoveMode = gameMode === 'ai' && turn !== playerColor;
                 const vBoard = isPremoveMode ? getVirtualBoard() : board;
@@ -1441,6 +1458,7 @@
             ========================================================== */
             async function onClick(r, c) {
                 if (replayMode) return;
+                if (blockHistoryReviewInput()) return;
                 if (dragging && !touchDragging) return;
 
                 const isPremoveMode = gameMode === 'ai' && turn !== playerColor;
@@ -1506,6 +1524,9 @@
             }
 
             function onDragStart(e, r, c) {
+                if (blockHistoryReviewInput()) {
+                    return e.preventDefault();
+                }
 
                 const isPremoveMode = gameMode === 'ai' && turn !== playerColor;
                 const vBoard = isPremoveMode ? getVirtualBoard() : board;
@@ -1539,6 +1560,7 @@
             async function onDrop(e, tr, tc) {
                 if (replayMode) return;
                 if (!dragSrc) return;
+                if (blockHistoryReviewInput()) return;
                 await tryMove(dragSrc.r, dragSrc.c, tr, tc);
                 dragSrc = null;
             }
@@ -1709,6 +1731,27 @@
                         button.removeAttribute('aria-current');
                     }
                 });
+            }
+
+            function isReviewingHistorySnapshot() {
+                return activeMoveIndex !== null &&
+                    activeMoveIndex < currentMoveHistory.length - 1;
+            }
+
+            function blockHistoryReviewInput() {
+                if (!isReviewingHistorySnapshot()) {
+                    return false;
+                }
+
+                selected = null;
+                hints = [];
+                dragging = false;
+                dragSrc = null;
+                touchDragSrc = null;
+                touchDragging = false;
+                refreshHighlights();
+                showStatus('Select the latest move before continuing play.', true);
+                return true;
             }
 
             function isBoardCoordinate(value) {
@@ -1975,22 +2018,9 @@
                 replayMoves = [];
                 replayIndex = 0;
 
-                // USE ORIGINAL HISTORY INSTEAD OF REVERSED DOM
-                const moveSpans = document.querySelectorAll('.move-white, .move-black');
-
-                moveSpans.forEach(span => {
-                    const move = span.textContent
-                        ?.replace(/[+#]/g, '')
-                        ?.replace(/\s+/g, '')
-                        ?.trim();
-
-                    if (move && move !== '...') {
-                        console.log("Replay move added:", move);
-                        replayMoves.push(move);
-                    }
-                });
-
-                console.log("FINAL REPLAY MOVES:", replayMoves);
+                replayMoves = currentMoveHistory
+                    .map(move => move?.notation?.replace(/[+#]/g, '').trim())
+                    .filter(move => move && move !== '...');
 
                 if (window.Chess) {
                     replayBoard = new window.Chess();
@@ -2645,8 +2675,12 @@
                 );
             }
 
-            async function startNewGame(mode, pColor = 'white', difficulty = 'medium', fen = null, timeLimitMins = null, overrideNames = null) {
+            async function startNewGame(mode, pColor = 'white', difficulty = 'medium', fen = null, timeLimitMins = null, overrideNames = null, preservePuzzleMode = false) {
                 replayMode = false;
+
+                if (!preservePuzzleMode) {
+                    resetDailyPuzzleState();
+                }
 
                 if (autoReplayInterval) {
                     clearInterval(autoReplayInterval);
@@ -3649,10 +3683,13 @@ if (leaveConfirmNo) leaveConfirmNo.addEventListener('click', () => {
 
                 // 3. Resume the timer if they click Close
                 if (noBtn) {
+                    const defaultText = noBtn.textContent;
                     noBtn.textContent = 'Close';
                     const defaultClose = noBtn.onclick;
-                    noBtn.onclick = () => {
-                        if (defaultClose) defaultClose();
+                    noBtn.onclick = (event) => {
+                        noBtn.textContent = defaultText;
+                        noBtn.onclick = defaultClose;
+                        if (defaultClose) defaultClose.call(noBtn, event);
                         if (paused && typeof resumeGame === 'function') {
                             resumeGame().catch(() => {});
                         }
@@ -3714,9 +3751,10 @@ if (leaveConfirmNo) leaveConfirmNo.addEventListener('click', () => {
                 const touch = e.touches[0];
                 const squareEl = e.target.closest('.square');
                 if (!squareEl) return;
+                if (blockHistoryReviewInput()) return;
 
-                const r = parseInt(squareEl.dataset.r);
-                const c = parseInt(squareEl.dataset.c);
+                const r = parseInt(squareEl.dataset.r, 10);
+                const c = parseInt(squareEl.dataset.c, 10);
                 const isPremoveMode = gameMode === 'ai' && turn !== playerColor;
                 const vBoard = isPremoveMode ? getVirtualBoard() : board;
                 const piece = vBoard[r][c];
@@ -3728,6 +3766,8 @@ if (leaveConfirmNo) leaveConfirmNo.addEventListener('click', () => {
 
                 if (!isPremoveDrag && !isNormalDrag) return;
 
+                touchStartPos = { x: touch.clientX, y: touch.clientY };
+                touchTapSquare = { r, c };
                 touchDragSrc = { r, c };
             }, { passive: true });
 

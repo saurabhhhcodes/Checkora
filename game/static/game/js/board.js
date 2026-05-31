@@ -1598,17 +1598,30 @@
                 };
             }
 
+            function getMoveBoard(move) {
+                const snapshot = move?.board;
+                if (!Array.isArray(snapshot) || snapshot.length !== 8) {
+                    return null;
+                }
+                if (!snapshot.every(row => Array.isArray(row) && row.length === 8)) {
+                    return null;
+                }
+                return snapshot.map(row => row.slice());
+            }
+
             function activateHistoryMove(index) {
                 const move = currentMoveHistory[index];
                 const highlight = getMoveHighlight(move);
+                const historyBoard = getMoveBoard(move);
 
-                if (!highlight) return;
+                if (!highlight || !historyBoard) return;
 
                 selected = null;
                 hints = [];
+                board = historyBoard;
                 lastMove = highlight;
                 setActiveHistoryMove(index);
-                refreshHighlights();
+                syncPieces();
                 showStatus(`Reviewing move ${Math.floor(index / 2) + 1}: ${move.notation}`, false);
             }
 
@@ -3824,3 +3837,65 @@ if (leaveConfirmNo) leaveConfirmNo.addEventListener('click', () => {
             });
 
 })();
+
+function updateDailyStreak() {
+
+    const today =
+        new Date().toDateString();
+
+    let streakData =
+        JSON.parse(
+            localStorage.getItem("dailyStreak")
+        );
+
+    if (!streakData) {
+
+        streakData = {
+            streak: 1,
+            lastPlayed: today
+        };
+
+    } else {
+
+        const lastPlayed =
+            new Date(streakData.lastPlayed);
+
+        const currentDate =
+            new Date(today);
+
+        const diffDays =
+            Math.floor(
+                (currentDate - lastPlayed)
+                / (1000 * 60 * 60 * 24)
+            );
+
+        if (diffDays === 1) {
+
+            streakData.streak += 1;
+
+        } else if (diffDays > 1) {
+
+            streakData.streak = 1;
+        }
+
+        streakData.lastPlayed = today;
+    }
+
+    localStorage.setItem(
+        "dailyStreak",
+        JSON.stringify(streakData)
+    );
+
+    const streakEl =
+        document.getElementById(
+            "streak-count"
+        );
+
+    if (streakEl) {
+
+        streakEl.textContent =
+            streakData.streak;
+    }
+}
+
+window.addEventListener("load", updateDailyStreak);

@@ -3547,7 +3547,7 @@
                 } else if (key === 'h') {
                     e.preventDefault();
                     if (shouldConfirmLeave()) {
-                        leaveConfirmOverlay.style.display = 'flex';
+                        leaveConfirmOverlay.classList.remove('active');
                     } else {
                         window.location.href = '/';
                     }

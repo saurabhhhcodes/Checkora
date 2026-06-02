@@ -1033,7 +1033,7 @@ class CustomPasswordResetView(PasswordResetView):
 
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect('index')
+        return redirect('landing')
 
     if request.method == 'POST':
         form = AuthenticationForm(data=request.POST)
@@ -1050,7 +1050,7 @@ def login_view(request):
                 request.session.set_expiry(0)# Browser close
                 
             messages.success(request, f'Welcome back, {user.username}! Login successful.')
-            return redirect('index')
+            return redirect('landing')
 
     else:
         form = AuthenticationForm()

@@ -463,7 +463,6 @@
             function playGameOverSound(reason, resultState) {
                 if (!soundEnabled) return;
 
-                 console.log('playGameOverSound called - reason:', reason, 'resultState:', resultState);
 
                 let sound = null;
 
@@ -481,8 +480,7 @@
                 }
             }
 
-                 console.log('Sound selected:', sound?.src);
-
+                
                 if (sound) {
                 sound.currentTime = 0;
                 sound.play().catch((e) => console.log('Sound play error:', e));

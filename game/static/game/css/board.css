@@ -70,10 +70,21 @@ body {
 
 /* Logo text */ 
 .logo-text {
-    font-family: 'Cinzel', serif;
+    font-family: Cinzel, serif;
     font-size: 26px;
     font-weight: 700;
     letter-spacing: 2px;
+}
+
+.promo-logo .logo-text {
+    font-size: 1.8rem;
+}
+
+.logo-white {
+    color: #ffffff;
+}
+
+.logo-gold {
     color: #f0c040;
 }
 
@@ -85,6 +96,8 @@ body {
     .logo-text {
         font-size: 20px;
     }
+
+
 }
 
 .header .badge {
@@ -144,6 +157,82 @@ body {
     font-weight: 600;
 }
 
+.profile-dropdown{
+    position: relative;
+    display: inline-block;
+}
+
+.profile-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #0f172a;
+    color: #f0c040;
+    border: 1px solid #2d3748;
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    min-height: 40px;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.profile-btn:hover{
+    border-color: #f0c040;
+    color: #f0c040;
+    box-shadow: 0 0 15px rgba(240, 192, 64, 0.25);
+    transform: translateY(-1px);
+}
+
+.dropdown-content{
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: -2px;
+    min-width: 220px;
+    background: #111827;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    z-index: 9999;
+}
+
+.profile-dropdown:hover .dropdown-content{
+    display: block;
+}
+
+.dropdown-content a,
+.logout-option{
+    display: block;
+    width: 100%;
+    padding: 14px 18px;
+    color: white;
+    text-decoration: none;
+    background: transparent;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    transition: 0.3s ease;
+    font-size: 14px;
+}
+
+.dropdown-content a:hover,
+.logout-option:hover{
+    background: rgba(255,255,255,0.06);
+}
+
+.delete-option{
+    color: #ef4444 !important;
+}
+
+.delete-option:hover{
+    background: rgba(239,68,68,0.12) !important;
+}
 
 /* ============================================================
    Game Layout  (left panel · board · right panels)
@@ -480,12 +569,19 @@ body {
     background-color: rgba(40, 120, 220, 0.55) ;
 }
 
-.square.premove.light {
-    background-color: rgba(255, 80, 80, 0.45);
-}
-
-.square.premove.dark {
-    background-color: rgba(180, 40, 40, 0.6);
+.square.premove {
+    outline: 2px dashed #3b82f6 !important;
+    outline-offset: -3px;
+    background-color: rgba(59, 130, 246, 0.15) !important;
+    background-image: repeating-linear-gradient(
+        45deg,
+        rgba(255, 255, 255, 0.1) 0,
+        rgba(255, 255, 255, 0.1) 3px,
+        transparent 3px,
+        transparent 8px
+    ) !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+    z-index: 5;
 }
 
 /* Valid-move dot */
@@ -1081,9 +1177,9 @@ body {
 }
 
 .clock {
-    flex: 1 1 0;
+    flex: 1 1 auto;
     min-width: 0;
-    padding: 12px 16px;
+    padding: 8px 12px;
     border-radius: 8px;
     background: #16162a;
     border: 1px solid #252545;
@@ -1091,23 +1187,26 @@ body {
     justify-content: space-between;
     align-items: center;
     transition: all 0.25s ease;
+    gap: 6px;
 }
 
 .clock .label {
-    font-size: clamp(0.5rem, 0.9vw, 0.65rem);
-    letter-spacing: 0.5px;
+    font-size: clamp(0.5rem, 0.8vw, 0.6rem);
+    letter-spacing: -0.1px;
     font-weight: 700;
     opacity: 0.7;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+    flex: 1 1 auto;
 }
 
 .clock .time {
     font-family: 'Consolas', 'Courier New', monospace;
     font-size: 1.15rem;
     font-weight: 700;
+    flex-shrink: 0;
 }
 
 /* Active player */
@@ -1170,15 +1269,19 @@ body {
     cursor: pointer;
     transition: all 0.2s ease;
     padding: 0;
+    opacity: 0.75;
 }
 
 .theme-btn:hover {
     transform: scale(1.15);
+    opacity: 1;
 }
 
 .theme-btn.active {
     border-color: #f0c040;
-    box-shadow: 0 0 8px rgba(240, 192, 64, 0.4);
+    box-shadow: 0 0 6px rgba(240, 192, 64, 0.35);
+    transform: scale(1.1);
+    opacity: 1;
 }
 
 .theme-btn[data-theme="classic"] { background-color: #facc15; }
@@ -1260,17 +1363,17 @@ body {
   display: none; 
 }
 
- {
-  .m-fab {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    position: fixed;
-    top: 14px;
-    right: 12px;
-    z-index: 10000;
-  }
-  .m-fab-btn {
+@media (max-width: 768px) {
+    .m-fab {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        position: fixed;
+        top: 14px;
+        right: 12px;
+        z-index: 10000;
+    }
+.m-fab-btn {
     width: 44px;
     height: 44px;
     border-radius: 50%;
@@ -1314,12 +1417,19 @@ body {
     gap: 12px;
 }
 
-.promo-logo span {
+.promo-logo .logo-text {
     font-family: 'Cinzel', serif;
     font-size: 1.8rem;
     font-weight: 700;
-    color: #f0c040;
     letter-spacing: 2px;
+}
+
+.promo-logo .logo-white {
+    color: #ffffff;
+}
+
+.promo-logo .logo-gold {
+    color: #f0c040;
 }
 
 .promo-title img {
@@ -1560,6 +1670,9 @@ body {
 
 .chessboard.paused::after {
     content: "⏸ GAME PAUSED";
+
+.chessboard.paused:not(.confirm-open)::after {
+    content: "Resume to Continue";
     position: absolute;
     top: 48%;
     left: 50%;
@@ -1732,22 +1845,73 @@ body {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: clamp(0.65rem, 1vw, 0.875rem);
-    margin-top: 8px;
+    font-size: clamp(0.6rem, 0.9vw, 0.75rem);
+    color: #ffffff;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.streak-counter {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: clamp(0.6rem, 0.9vw, 0.75rem);
     color: #ffffff;
     flex-shrink: 0;
     white-space: nowrap;
 }
 
 #status-indicator {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background-color: #00c853;
 }
 
 .offline {
     background-color: #d50000 !important;
+}
+
+/* ================= DAILY STREAK ================= */
+
+.daily-streak-box {
+    background: rgba(240, 192, 64, 0.08);
+    border: 1px solid rgba(240, 192, 64, 0.2);
+    color: #f0c040;
+    padding: 8px 14px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 4px 14px rgba(240, 192, 64, 0.08);
+    transition: all 0.25s ease;
+}
+
+.daily-streak-box:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(240, 192, 64, 0.16);
+}
+
+#streak-count {
+    color: #ffd54f;
+    font-weight: 700;
+    font-size: 1rem;
+}
+
+@media (max-width: 768px) {
+    .daily-streak-box {
+        font-size: 0.8rem;
+        padding: 6px 10px;
+        border-radius: 10px;
+    }
+
+    #streak-count {
+        font-size: 0.9rem;
+    }
 }
 
 /* ============================================================
@@ -2385,3 +2549,18 @@ body.blindfold-mode .capture-ring {
 }
 
 
+/* Puzzle Hint System */
+
+.hint-source {
+    box-shadow:
+        inset 0 0 0 4px #f0c040,
+        0 0 12px rgba(240, 192, 64, 0.6);
+    border-radius: 4px;
+}
+
+.hint-target {
+    box-shadow:
+        inset 0 0 0 4px #4caf50,
+        0 0 12px rgba(76, 175, 80, 0.6);
+    border-radius: 4px;
+}

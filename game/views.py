@@ -9,9 +9,21 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.models import User
-from django.contrib.auth.forms import AuthenticationForm
+from django.urls import reverse
+from django.utils.http import (
+    urlsafe_base64_encode,
+    urlsafe_base64_decode
+)
+
+from django.utils.encoding import (
+    force_bytes,
+    force_str
+)
+
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.forms import AuthenticationForm, PasswordResetForm
 from django.contrib.auth.views import PasswordResetView
 from smtplib import SMTPException
 from django.core.mail import (
@@ -29,28 +41,49 @@ from django.views.decorators.http import require_GET, require_POST
 from django.contrib.auth.decorators import login_required
 
 from .engine import ChessGame
-from .models import GameResult
+from .models import GameResult, PuzzleStats
 logger = logging.getLogger(__name__)
 from game.services import cleanup_stale_games
+from .analysis import build_summary
 
 def landing(request):
     """Render the landing page introduction to Checkora."""
     return render(request, 'game/landing.html')
 
+def preloader(request):
+    return render(request, 'game/preloading.html')
 
 @ensure_csrf_cookie
 def index(request):
     """Render the board and initialise a new game in the session."""
+    if 'game' in request.session:
+        game_data = request.session['game']
+        status = game_data.get('game_status', 'active')
+        if status in ['checkmate', 'draw', 'resign', 'stalemate', 'timeout']:
+            del request.session['game']
     if 'game' not in request.session:
         game = ChessGame()
         request.session['game'] = game.to_dict()
     return render(request, 'game/board.html')
 
 
-def record_game_result(request, mode, winner, reason, player_color='white'):
+def record_game_result(request, mode, winner, reason, player_color='white', moves=None):
     """Save a completed game result to the database."""
     user = request.user if request.user.is_authenticated else None
-    GameResult.objects.create(user=user, mode=mode, winner=winner, end_reason=reason, player_color=player_color)
+    if moves is None:
+        game_data = request.session.get('game')
+        if game_data and isinstance(game_data, dict):
+            moves = game_data.get('move_history', [])
+        else:
+            moves = []
+    GameResult.objects.create(
+        user=user,
+        mode=mode,
+        winner=winner,
+        end_reason=reason,
+        player_color=player_color,
+        moves=moves
+    )
 
 
 @require_POST
@@ -99,9 +132,9 @@ def make_move(request):
         request.session.modified = True
         if game_status == 'checkmate':
             winner = 'black' if game.current_turn == 'white' else 'white'
-            record_game_result(request, game.mode, winner, 'checkmate', game.player_color)
+            record_game_result(request, game.mode, winner, 'checkmate', game.player_color, moves=game.move_history)
         elif game_status in ('stalemate', 'draw'):
-            record_game_result(request, game.mode, 'draw', game.draw_reason or 'stalemate', game.player_color)
+            record_game_result(request, game.mode, 'draw', game.draw_reason or 'stalemate', game.player_color, moves=game.move_history)
 
     return JsonResponse({
         'valid': success,
@@ -405,10 +438,10 @@ def ai_move(request):
     if not best:
         if game.game_status == 'checkmate':
             winner = 'black' if game.current_turn == 'white' else 'white'
-            record_game_result(request, game.mode, winner, 'checkmate', game.player_color)
+            record_game_result(request, game.mode, winner, 'checkmate', game.player_color, moves=game.move_history)
             game_status = 'checkmate'
         else:
-            record_game_result(request, game.mode, 'draw', 'stalemate', game.player_color)
+            record_game_result(request, game.mode, 'draw', 'stalemate', game.player_color, moves=game.move_history)
             game_status = 'stalemate'
 
         game.game_status = game_status
@@ -438,9 +471,9 @@ def ai_move(request):
 
         if game_status == 'checkmate':
             winner = 'black' if game.current_turn == 'white' else 'white'
-            record_game_result(request, game.mode, winner, 'checkmate', game.player_color)
+            record_game_result(request, game.mode, winner, 'checkmate', game.player_color, moves=game.move_history)
         elif game_status in ('stalemate', 'draw'):
-            record_game_result(request, game.mode, 'draw', game.draw_reason or 'stalemate', game.player_color)
+            record_game_result(request, game.mode, 'draw', game.draw_reason or 'stalemate', game.player_color, moves=game.move_history)
 
     return JsonResponse({
         'valid': success,
@@ -496,7 +529,7 @@ def offer_draw(request):
         game.draw_reason = 'agreement'
         request.session['game'] = game.to_dict()
         request.session.modified = True
-        record_game_result(request, game.mode, 'draw', 'agreement', game.player_color)
+        record_game_result(request, game.mode, 'draw', 'agreement', game.player_color, moves=game.move_history)
         return JsonResponse({
             'success': True,
             'game_status': game.game_status,
@@ -523,7 +556,7 @@ def resign_game(request):
     request.session.modified = True
 
     try:
-        record_game_result(request, game.mode, winner, 'resign', game.player_color)
+        record_game_result(request, game.mode, winner, 'resign', game.player_color, moves=game.move_history)
     except Exception as e:
         logger.error('Failed to record resign result: %s', e)
 
@@ -540,7 +573,10 @@ def check_username(request):
     username = request.GET.get('username', '').strip()
     if not username:
         return JsonResponse({'available': False, 'error': 'No username provided'}, status=400)
-    exists = User.objects.filter(username__iexact=username).exists()
+    exists = User.objects.filter(
+        username__iexact=username,
+        is_active=True
+    ).exists()
     return JsonResponse({'available': not exists})
 
 
@@ -674,7 +710,11 @@ def verify_otp(request):
 
         if otp_created_at:
             if time.time() - otp_created_at > 300:
-
+                try:
+                    user = User.objects.get(id=user_id, is_active=False)
+                    user.delete()
+                except User.DoesNotExist:
+                    pass
                 messages.error(
                     request,
                     'OTP has expired. Please register again.',
@@ -718,7 +758,7 @@ def verify_otp(request):
                         from_email=settings.EMAIL_HOST_USER,
                         to=[user.email],
                     )
-                    email.attach_alternative(html_content,"text/html")
+                    email.attach_alternative(html_content, "text/html")
                     email.send(fail_silently=True)
                 
                 except Exception as e:
@@ -825,10 +865,124 @@ def resend_otp(request):
     return redirect('verify_otp')
 
 class CustomPasswordResetView(PasswordResetView):
+    """Password reset view with email cooldown and IP-level throttling."""
+
+    form_class = PasswordResetForm
+    email_cooldown_message = (
+        'Please wait {duration} before requesting another password reset email.'
+    )
+    ip_throttle_message = (
+        'Too many password reset requests were sent from your network. '
+        'Please wait {duration} before trying again.'
+    )
+
+    def _cache_key(self, prefix, value):
+        normalized = (value or 'unknown').strip().lower()
+        digest = hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+        return f'{prefix}:{digest}'
+
+    def _ip_expires_key(self, ip_key):
+        return f'{ip_key}:expires'
+
+    def _client_ip(self, request):
+        forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if forwarded_for:
+            return forwarded_for.split(',')[0].strip()
+        return request.META.get('REMOTE_ADDR', 'unknown')
+
+    def _format_duration(self, seconds):
+        seconds = max(1, int(seconds))
+        minutes, remainder = divmod(seconds, 60)
+        if minutes and remainder:
+            return f'{minutes} minute(s) and {remainder} second(s)'
+        if minutes:
+            return f'{minutes} minute(s)'
+        return f'{remainder} second(s)'
+
+    def _cooldown_remaining(self, cache_key):
+        expires_at = cache.get(cache_key)
+        if not expires_at:
+            return 0
+        return max(0, int(expires_at - time.time()))
+
+    def _get_limited_response(self, request, email):
+        email_key = self._cache_key('password-reset-email', email)
+        remaining = self._cooldown_remaining(email_key)
+        if remaining:
+            messages.error(
+                request,
+                self.email_cooldown_message.format(
+                    duration=self._format_duration(remaining)
+                ),
+            )
+            return redirect('password_reset')
+
+        ip_key = self._cache_key(
+            'password-reset-ip',
+            self._client_ip(request),
+        )
+        ip_attempts = cache.get(ip_key, 0)
+        max_attempts = getattr(settings, 'PASSWORD_RESET_IP_MAX_REQUESTS', 3)
+        if ip_attempts >= max_attempts:
+            remaining = self._cooldown_remaining(self._ip_expires_key(ip_key))
+            if not remaining:
+                remaining = getattr(settings, 'PASSWORD_RESET_IP_WINDOW_SECONDS', 900)
+            messages.error(
+                request,
+                self.ip_throttle_message.format(
+                    duration=self._format_duration(remaining)
+                ),
+            )
+            return redirect('password_reset')
+
+        request._password_reset_email_key = email_key
+        request._password_reset_ip_key = ip_key
+        return None
+
+    def _record_password_reset_request(self, request):
+        email_timeout = getattr(
+            settings,
+            'PASSWORD_RESET_EMAIL_COOLDOWN_SECONDS',
+            300,
+        )
+        cache.set(
+            request._password_reset_email_key,
+            time.time() + email_timeout,
+            timeout=email_timeout,
+        )
+
+        ip_timeout = getattr(settings, 'PASSWORD_RESET_IP_WINDOW_SECONDS', 900)
+        ip_expires_key = self._ip_expires_key(request._password_reset_ip_key)
+        if not cache.add(request._password_reset_ip_key, 1, timeout=ip_timeout):
+            cache.incr(request._password_reset_ip_key)
+            if not cache.get(ip_expires_key):
+                cache.set(ip_expires_key, time.time() + ip_timeout, timeout=ip_timeout)
+        else:
+            cache.set(ip_expires_key, time.time() + ip_timeout, timeout=ip_timeout)
+
+    def _single_user_form(self, selected_user):
+        base_form = self.get_form_class()
+
+        class SingleUserPasswordResetForm(base_form):
+            def get_users(self, email):
+                if selected_user and selected_user.has_usable_password():
+                    return [selected_user]
+                return []
+
+        return SingleUserPasswordResetForm
+
     def post(self, request, *args, **kwargs):
 
         email = request.POST.get('email', '').strip().lower()
-        users = User.objects.filter(email=email)
+        if not email:
+            messages.error(
+                request,
+                'Please enter a valid email address.'
+            )
+
+            return redirect('password_reset')
+
+        users = User.objects.filter(email__iexact=email)
 
         if users.count() > 1 and not request.POST.get(
             'selected_username'
@@ -843,63 +997,48 @@ class CustomPasswordResetView(PasswordResetView):
                 request,
                 'game/password_reset.html',
                 {
-                    'form': self.form_class,
+                    'form': self.get_form(),
                     'usernames': usernames,
                     'email': email
                 }
             )
-        if not email:
-            messages.error(
-                request,
-                'Please enter a valid email address.'
-            )
-
-            return redirect('password_reset')
-        cache_key = (f"password_reset_cooldown_{email}")
-
-        if cache.get(cache_key):
-
-            messages.error(
-                request,
-                'Please wait 60 seconds before requesting another password reset email.',
-            )
-
-            return redirect('password_reset')
-        cache.set(cache_key, True, timeout=60)
         selected_username = request.POST.get(
             'selected_username'
         )
 
+        form_class = self.get_form_class()
         if selected_username:
 
             selected_user = User.objects.filter(
                 username=selected_username,
-                email=email
+                email__iexact=email
             ).first()
 
-            from django.contrib.auth.forms import (
-                PasswordResetForm
-            )
+            if not selected_user:
+                messages.error(
+                    request,
+                    'Please select a valid account for this email address.',
+                )
+                return redirect('password_reset')
 
-            class SingleUserPasswordResetForm(
-                PasswordResetForm
-            ):
+            form_class = self._single_user_form(selected_user)
 
-                def get_users(self, email):
+        form = form_class(**self.get_form_kwargs())
+        if not form.is_valid():
+            return self.form_invalid(form)
 
-                    return [selected_user]
+        limited_response = self._get_limited_response(request, email)
+        if limited_response:
+            return limited_response
 
-            self.form_class = (SingleUserPasswordResetForm)
-        return super().post(
-            request,
-            *args,
-            **kwargs
-        )
+        response = self.form_valid(form)
+        self._record_password_reset_request(request)
+        return response
 
 
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect('index')
+        return redirect('landing')
 
     if request.method == 'POST':
         form = AuthenticationForm(data=request.POST)
@@ -916,7 +1055,7 @@ def login_view(request):
                 request.session.set_expiry(0)# Browser close
                 
             messages.success(request, f'Welcome back, {user.username}! Login successful.')
-            return redirect('index')
+            return redirect('landing')
 
     else:
         form = AuthenticationForm()
@@ -971,6 +1110,47 @@ def stats_view(request):
         'win_percentage': round(win_percentage, 2),
     })
 
+@login_required
+def leaderboard_view(request):
+    leaderboard = PuzzleStats.objects.select_related(
+        "user"
+    ).order_by(
+        "-puzzles_solved",
+        "-best_streak"
+    )
+
+    return render(
+        request,
+        "game/leaderboard.html",
+        {
+            "leaderboard": leaderboard
+        }
+    )
+
+@login_required
+@require_POST
+def update_puzzle_stats(request):
+    data = json.loads(request.body)
+
+    stats, _ = PuzzleStats.objects.get_or_create(
+        user=request.user
+    )
+
+    stats.puzzles_solved = data.get("puzzles_solved", 0)
+    stats.current_streak = data.get("current_streak", 0)
+    stats.best_streak = data.get("best_streak", 0)
+    stats.daily_completions = data.get("daily_completions", 0)
+
+    stats.save()
+
+    return JsonResponse({"success": True})
+
+def puzzle_stats_view(request):
+    return JsonResponse({
+        "streak": 0,
+        "longest_streak": 0
+    })
+
 @csrf_exempt
 @require_POST
 def cleanup_cron(request):
@@ -998,18 +1178,6 @@ def cleanup_cron(request):
             'message': str(e)
         }, status=500)
 
-def privacy_view(request):
-    """Directly serve the static privacy template page."""
-    return render(request, 'game/privacy.html')
-
-def terms_view(request):
-    """Directly serve the static terms and conditions template page."""
-    return render(request, 'game/terms.html')
-
-def contact_view(request):
-    """Directly serve the static contact page template instance."""
-    return render(request, 'game/contact.html')
-
 def password_reset_account_selection(request):
 
     email = request.GET.get('email')
@@ -1025,4 +1193,131 @@ def password_reset_account_selection(request):
         }
     )
 
+
+@login_required
+def delete_account(request):
+
+    if request.method == 'POST':
+
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+
+        user = authenticate(
+            username=username,
+            password=password
+        )
+
+        if user and user == request.user:
+
+            uid = urlsafe_base64_encode(
+                force_bytes(user.pk)
+            )
+
+            token = default_token_generator.make_token(user)
+            delete_link = request.build_absolute_uri(
+                reverse(
+                    'confirm_delete_account',
+                    kwargs={
+                        'uidb64': uid,
+                        'token': token
+                    }
+                )
+            )
+
+            try:
+
+                send_mail(
+                    subject='Confirm Account Deletion',
+                    message=f"""
+Click the link below to permanently delete your account:
+
+{delete_link}
+
+If this wasn't you, ignore this email.
+""",
+                    from_email=settings.EMAIL_HOST_USER,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+
+                messages.success(
+                    request,
+                    'Confirmation email sent to your registered email.'
+                )
+
+            except Exception:
+                messages.error(
+                    request,
+                    'Failed to send confirmation email.'
+                )
+
+            return redirect('index')
+
+        messages.error(
+            request,
+            'Invalid username or password.'
+        )
+
+    return render(
+        request,
+        'game/delete_account.html'
+    )
     
+
+def confirm_delete_account(request, uidb64, token):
+
+    try:
+
+        uid = force_str(
+            urlsafe_base64_decode(uidb64)
+        )
+
+        user = User.objects.get(pk=uid)
+
+    except Exception:
+
+        user = None
+
+    if user and default_token_generator.check_token(
+        user,
+        token
+    ):
+
+        logout(request)
+
+        user.delete()
+
+        return render(
+            request,
+            'game/delete_success.html'
+        )
+
+    messages.error(
+        request,
+        'Invalid or expired deletion link.'
+    )
+
+    return redirect('landing')
+@csrf_exempt
+@require_POST
+def analyze_game_view(request):
+    """
+    Analyze a completed game based on its move history and return statistics.
+    Expects JSON payload with 'moves' (list of notation strings), 'result', and 'reason'.
+    """
+    try:
+        data = json.loads(request.body)
+        moves = data.get('moves', [])
+        result = data.get('result', 'Unknown')
+        reason = data.get('reason', 'Unknown')
+        
+        # Ensure moves is a list of strings
+        if not isinstance(moves, list):
+            moves = []
+        moves = [str(m) for m in moves]
+            
+        summary = build_summary(moves, result, reason)
+        return JsonResponse(summary)
+    except Exception as e:
+        logger.error('Failed to analyze game: %s', e)
+        return JsonResponse({'error': 'Failed to analyze game'}, status=400)

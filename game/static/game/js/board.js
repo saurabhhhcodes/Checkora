@@ -75,6 +75,7 @@
 
             let expectedMoveEval = null;
             let evaluationCache = {};
+            let currentFen = null;
             let currentDifficulty = 'medium';
             let currentWhiteName = 'White';
             let currentBlackName = 'Black';
@@ -985,6 +986,7 @@
 
                 board = parseBoard(data.board);
                 turn = data.current_turn;
+                currentFen = data.fen || null;
                 whiteTime = data.white_time;
                 blackTime = data.black_time;
                 paused = data.paused;
@@ -1507,6 +1509,7 @@
                         from_row: fr, from_col: fc,
                         to_row: tr, to_col: tc,
                     };
+                    if (currentFen) body.fen = currentFen;
                     if (promotionPiece) body.promotion_piece = promotionPiece;
 
                     const data = await post('/api/move/', body);
@@ -1516,6 +1519,7 @@
                             if (!skipAnimation) await animateMove(fr, fc, tr, tc);
                             board = parseBoard(data.board);
                             turn = data.current_turn;
+                            currentFen = data.fen || null;
 
                             // Daily Puzzle Validation
                             if (dailyPuzzleMode && currentPuzzle && !puzzleAnalyzing) {

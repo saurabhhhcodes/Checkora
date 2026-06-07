@@ -2595,6 +2595,11 @@ body.blindfold-mode .capture-ring {
     border-color: #f0c040;
 }
 
+.custom-checkbox:focus-visible {
+    outline: 2px solid #f0c040;
+    outline-offset: 2px;
+}
+
 .custom-checkbox:checked {
     background-color: #f0c040;
     border-color: #f0c040;

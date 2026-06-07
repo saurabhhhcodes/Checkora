@@ -354,7 +354,7 @@ document.addEventListener(
                 }
 
                 if (!selectedSquare) {
-                    const piece = square.innerText.trim();
+                    const piece = square.innerHTML.trim();
                     if (!piece) {
                         return;
                     }

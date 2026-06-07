@@ -2169,3 +2169,9 @@ class AdditionalViewsSecurityAndLessonsTest(TestCase):
         self.assertIn('lesson_steps', response.context)
         self.assertIn('practice_position', response.context)
         self.assertNotEqual(response.context['lesson_steps'], [])
+
+    def test_lesson_detail_invalid_slug_returns_404(self):
+        response = self.client.get(
+            reverse('lesson_detail', args=['not-a-real-lesson'])
+        )
+        self.assertEqual(response.status_code, 404)

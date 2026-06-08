@@ -1608,6 +1608,8 @@ def get_unlocked_lessons(completed_lessons):
 
     for level_index, level in enumerate(LESSON_LEVELS):
         
+        lessons = level["lessons"]
+        
         previous_level_complete = True
 
         if level_index > 0:
@@ -1629,27 +1631,7 @@ def get_unlocked_lessons(completed_lessons):
     return unlocked
 
 def lessons_view(request):
-    lessons = {
-        "Beginner": [
-            "How Pieces Move",
-            "Check and Checkmate",
-            "Castling",
-            "Opening Principles",
-        ],
-        "Intermediate": [
-            "Forks",
-            "Pins",
-            "Skewers",
-            "Discovered Attacks",
-        ],
-        "Advanced": [
-            "Pawn Structures",
-            "King Safety",
-            "Piece Activity",
-            "Basic Endgames",
-        ],
-    }
-
+    
     completed_lessons = []
 
     if request.user.is_authenticated:

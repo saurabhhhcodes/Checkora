@@ -1256,10 +1256,30 @@ class CustomPasswordResetView(PasswordResetView):
 def get_client_ip(request):
     """Get client IP address safely by parsing trusted proxies."""
     remote_addr = request.META.get('REMOTE_ADDR', 'unknown')
-    trusted_proxies = set(
-        getattr(settings, 'TRUSTED_PROXIES', ['127.0.0.1', '::1'])
-    )
-    if remote_addr not in trusted_proxies:
+import ipaddress
+
+def _is_trusted_proxy(ip_text, trusted_entries):
+    """Check if an IP address matches trusted proxy entries (IP or CIDR)."""
+    try:
+        ip_obj = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return False
+    for entry in trusted_entries:
+        try:
+            if "/" in entry:
+                if ip_obj in ipaddress.ip_network(entry, strict=False):
+                    return True
+            elif ip_obj == ipaddress.ip_address(entry):
+                return True
+        except ValueError:
+            continue
+    return False
+
+def get_client_ip(request):
+    """Get client IP address safely by parsing trusted proxies."""
+    remote_addr = request.META.get('REMOTE_ADDR', 'unknown')
+    trusted_proxies = getattr(settings, 'TRUSTED_PROXIES', ['127.0.0.1', '::1'])
+    if not _is_trusted_proxy(remote_addr, trusted_proxies):
         return remote_addr
 
     forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
@@ -1267,8 +1287,9 @@ def get_client_ip(request):
         h.strip() for h in forwarded_for.split(',') if h.strip()
     ]
     for hop in reversed(hops):
-        if hop not in trusted_proxies:
+        if not _is_trusted_proxy(hop, trusted_proxies):
             return hop
+    return remote_addr
     return remote_addr
 
 

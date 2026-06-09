@@ -261,7 +261,10 @@ def generate_badge(user_achievement):
         / f"{achievement.rarity}.png"
     )
 
-    badge = Image.open(template_path).convert("RGBA")
+    if not template_path.exists():
+        raise FileNotFoundError(
+            f"Badge template not found: {template_path}"
+        )
 
     draw = ImageDraw.Draw(badge)
 

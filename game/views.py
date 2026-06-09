@@ -2566,6 +2566,11 @@ def download_badge(request, achievement_id):
     badge_path = generate_badge(
         user_achievement
     )
+    
+    safe_filename = (
+        slugify(user_achievement.achievement.title)
+        or f"badge_{achievement_id}"
+    )
 
     return FileResponse(
         open(badge_path, "rb"),

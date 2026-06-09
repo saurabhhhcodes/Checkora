@@ -1347,9 +1347,15 @@ def increment_counter(key, timeout):
         time.sleep(0.05)
 
     if not acquired:
-        raise RuntimeError(
-            "Failed to acquire cache lock for increment_counter."
-        )
+        # fail closed for brute-force logic without taking down login
+        current = cache.get(key)
+        try:
+            current = int(current) if current is not None else 0
+        except (ValueError, TypeError):
+            current = 0
+        next_val = current + 1
+        cache.set(key, next_val, timeout=timeout)
+        return next_val
 
     try:
         val = cache.get(key)

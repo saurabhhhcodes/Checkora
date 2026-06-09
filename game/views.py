@@ -2568,8 +2568,8 @@ def download_badge(request, achievement_id):
     )
     
     safe_filename = (
-    slugify(user_achievement.achievement.title)
-    or f"badge_{achievement_id}"
+        slugify(user_achievement.achievement.title)
+        or f"badge_{achievement_id}"
     )
 
     return FileResponse(
@@ -2577,4 +2577,3 @@ def download_badge(request, achievement_id):
         as_attachment=True,
         filename=f"{safe_filename}.png"
     )
-

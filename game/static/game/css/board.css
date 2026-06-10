@@ -1815,12 +1815,7 @@ body {
     z-index: 10000;
   }
 }
-
-    background: linear-gradient(135deg, #27ae60, #1e8449);
-    color: #fff;
-    border-color: #1a7a3c;
-}
-
+   
 /* ================= INPUT ERROR STATE ================= */
 .input-error {
     border-color: #ff6b6b !important;

@@ -406,6 +406,7 @@ body {
     flex-direction: column;
     width: calc(var(--square-size) * 8 + var(--board-border) * 2);
     box-sizing: border-box;
+    position: relative;
 }
 
 .ranks {
@@ -453,6 +454,60 @@ body {
     max-width: 100%;
     box-sizing: border-box;
     position: relative;
+}
+
+.ai-thinking-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 12, 24, 0.34);
+    backdrop-filter: blur(1px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+    z-index: 20;
+}
+
+.ai-thinking-overlay.visible {
+    opacity: 1;
+}
+
+.ai-thinking-panel {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(240, 192, 64, 0.42);
+    background: rgba(15, 15, 26, 0.88);
+    color: #f7d77b;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.34);
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.ai-thinking-spinner {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(247, 215, 123, 0.25);
+    border-top-color: #f0c040;
+    animation: ai-spin 0.8s linear infinite;
+    flex: 0 0 auto;
+}
+
+@keyframes ai-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ai-thinking-spinner {
+        animation: none;
+    }
 }
 
 /* ============================================================

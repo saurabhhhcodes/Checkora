@@ -523,6 +523,7 @@
             const shareModal = document.getElementById('shareModal');
             const rulebookModal = document.getElementById('rulebookModal');
             const boardEl = document.getElementById('board');
+            const aiThinkingOverlay = document.getElementById('aiThinkingOverlay');
             const turnEl = document.getElementById('turnBadge');
             const statusEl = document.getElementById('statusBar');
             const movesEl = document.getElementById('movesList');
@@ -609,6 +610,12 @@
                 if (a11yAnnouncer) {
                     a11yAnnouncer.textContent = '';
                     setTimeout(() => { a11yAnnouncer.textContent = msg; }, 50);
+                }
+            }
+
+            function setAIThinking(active) {
+                if (aiThinkingOverlay) {
+                    aiThinkingOverlay.classList.toggle('visible', active);
                 }
             }
 
@@ -970,6 +977,7 @@
                 // Reset AI request sequence and thinking state on load/reconnect to cancel stale requests
                 aiRequestSeq = 0;
                 aiThinking = false;
+                setAIThinking(false);
                 premoveQueue = [];
                 refreshPremoveHighlight();
                 whiteAlertFired = false;
@@ -1686,6 +1694,7 @@
                 // Increment and store current sequence value to identify this specific request
                 const seq = ++aiRequestSeq;
                 aiThinking = true;
+                setAIThinking(true);
                 
                 // fix: animated thinking dots
                 let dots = 1;
@@ -1803,6 +1812,7 @@
                 } finally {
                     if (seq === aiRequestSeq) {
                         aiThinking = false;
+                        setAIThinking(false);
                     }
                 }
             }
@@ -2935,6 +2945,7 @@
                 // Reset AI request sequence and thinking state on new game
                 aiRequestSeq = 0;
                 aiThinking = false;
+                setAIThinking(false);
                 premoveQueue = [];
                 refreshPremoveHighlight();
 

@@ -3,8 +3,11 @@ import logging
 import json
 import time
 import hashlib
+import math
+import ipaddress
 import secrets
 import secrets as secrets_module
+from django.http import HttpResponseServerError
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.conf import settings
 from django.http import Http404, JsonResponse
@@ -13,6 +16,7 @@ from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
 from django.utils.http import (
     urlsafe_base64_encode,
     urlsafe_base64_decode
@@ -23,9 +27,10 @@ from django.utils.encoding import (
     force_str
 )
 from django.utils.text import slugify
-
+from .progression import award_xp
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.forms import AuthenticationForm, PasswordResetForm
+from django.forms.utils import ErrorDict
 from django.contrib.auth.views import PasswordResetView
 from smtplib import SMTPException
 from django.core.mail import (
@@ -50,13 +55,30 @@ from .models import (
     LessonProgress,
     Achievement,
     UserAchievement,
+    FeaturedBadge,
+    UserProgress,
+    ChessPuzzle,
+    PlayerRating,
+    RatingHistory,
 )
+
+from .rating_service import calculate_rating_change
+
 logger = logging.getLogger(__name__)
+
+# Brute force protection parameters
+LOCKOUT_SECONDS = 900
+USERNAME_MAX_FAILS = 10
+IP_MAX_FAILS = 20
+
 from game.services import (
     cleanup_stale_games,
     check_game_achievements,
     check_puzzle_achievements,
+    generate_badge,
 )
+
+from django.http import FileResponse
 
 from .analysis import build_summary
 
@@ -81,6 +103,56 @@ def index(request):
     return render(request, 'game/board.html')
 
 
+def update_player_rating(user, winner, player_color):
+    rating, _ = PlayerRating.objects.get_or_create(
+        user=user
+    )
+
+    old_rating = rating.rating
+
+    if winner == "draw":
+        result = "draw"
+
+    elif winner == player_color:
+        result = "win"
+
+    else:
+        result = "loss"
+
+    change = calculate_rating_change(result)
+
+    new_rating = max(
+        100,
+        old_rating + change
+    )
+
+    actual_change = (
+        new_rating - old_rating
+    )
+    rating.rating = new_rating
+    rating.games_played += 1
+
+    if result == "win":
+        rating.wins += 1
+
+    elif result == "loss":
+        rating.losses += 1
+
+    else:
+        rating.draws += 1
+
+    rating.full_clean()
+    rating.save()
+
+    RatingHistory.objects.create(
+        user=user,
+        old_rating=old_rating,
+        new_rating=rating.rating,
+        rating_change=actual_change,
+        result=result
+    )
+    
+
 def record_game_result(request, mode, winner, reason, player_color='white', moves=None):
     """Save a completed game result to the database."""
     user = request.user if request.user.is_authenticated else None
@@ -102,6 +174,12 @@ def record_game_result(request, mode, winner, reason, player_color='white', move
     result.save()
 
     if user:
+        update_player_rating(
+            user,
+            winner,
+            player_color
+        )
+        
         check_game_achievements(user)
 
 
@@ -604,6 +682,27 @@ def check_username(request):
     return JsonResponse({'available': not exists})
 
 
+REGISTRATION_SESSION_KEYS = (
+    'registration_user_id',
+    'registration_otp_hash',
+    'otp_created_at',
+    'registration_email',
+    'otp_failed_attempts',
+)
+
+
+def _clear_registration_session(request):
+    """Clear all registration-related keys from the session and cache."""
+    user_id = request.session.get('registration_user_id')
+    if user_id and user_id != -1:
+        cache.delete(f"otp_failed_attempts_user_{user_id}")
+    else:
+        cache.delete(f"otp_failed_attempts_session_{request.session.session_key}")
+
+    for key in REGISTRATION_SESSION_KEYS:
+        request.session.pop(key, None)
+
+
 def register_view(request):
     """Handle new user registration with OTP email verification."""
     if request.user.is_authenticated:
@@ -814,10 +913,7 @@ def register_view(request):
                     # This preserves existing inactive accounts for re-verification.
                     if is_new_user:
                         user.delete()
-                    request.session.pop('registration_user_id', None)
-                    request.session.pop('registration_otp_hash', None)
-                    request.session.pop('registration_email', None)
-                    request.session.pop('otp_created_at', None)
+                    _clear_registration_session(request)
                     err_msg = (
                         'Failed to send OTP email. '
                         'Please check your email address and try again.'
@@ -842,23 +938,46 @@ def verify_otp(request):
         messages.error(request, 'Session expired. Please register again.')
         return redirect('register')
 
+    if user_id and user_id != -1:
+        cache_key = f"otp_failed_attempts_user_{user_id}"
+    else:
+        if not request.session.session_key:
+            request.session.create()
+        cache_key = f"otp_failed_attempts_session_{request.session.session_key}"
+
     if request.method == 'POST':
+        # Check expiration first
         otp_created_at = request.session.get('otp_created_at')
+        if otp_created_at and time.time() - otp_created_at > 300:
+            messages.error(
+                request,
+                'OTP has expired. Please register again.',
+            )
+            # Retrieve attempts to preserve across expiration
+            cache_attempts = cache.get(cache_key, 0)
+            session_attempts = request.session.get('otp_failed_attempts', 0)
+            otp_failed_attempts = max(session_attempts, cache_attempts)
 
-        if otp_created_at:
-            if time.time() - otp_created_at > 300:
-                # Security: preserve the inactive account so the
-                # user can re-register without losing their username.
-                messages.error(
-                    request,
-                    'OTP has expired. Please register again.',
-                )
-                request.session.pop('registration_otp_hash', None)
-                request.session.pop('otp_created_at', None)
-                request.session.pop('registration_user_id', None)
-                request.session.pop('registration_email', None)
+            _clear_registration_session(request)
+            if otp_failed_attempts:
+                request.session['otp_failed_attempts'] = otp_failed_attempts
+                cache.set(cache_key, otp_failed_attempts, timeout=900)
 
-                return redirect('register')
+            return redirect('register')
+
+        # Atomic increment of attempts in cache using cache.add and cache.incr
+        session_attempts = request.session.get('otp_failed_attempts', 0)
+        if not cache.add(cache_key, session_attempts + 1, timeout=900):
+            otp_failed_attempts = cache.incr(cache_key)
+        else:
+            otp_failed_attempts = session_attempts + 1
+
+        request.session['otp_failed_attempts'] = otp_failed_attempts
+
+        if otp_failed_attempts > 5:
+            _clear_registration_session(request)
+            messages.error(request, 'Too many incorrect attempts. Please register again.')
+            return redirect('register')
 
         entered_otp = request.POST.get('otp', '').strip()
 
@@ -877,10 +996,7 @@ def verify_otp(request):
                 user.is_active = True
                 user.full_clean()
                 user.save()
-                del request.session['registration_user_id']
-                del request.session['registration_otp_hash']
-                request.session.pop('otp_created_at', None)
-                request.session.pop('registration_email', None)
+                _clear_registration_session(request)
 
                 try:
                     from django.template import TemplateDoesNotExist, TemplateSyntaxError
@@ -918,13 +1034,15 @@ def verify_otp(request):
                     request,
                     'User not found. Please register again.'
                 )
-                request.session.pop('registration_otp_hash', None)
-                request.session.pop('otp_created_at', None)
-                request.session.pop('registration_user_id', None)
-                request.session.pop('registration_email', None)
+                _clear_registration_session(request)
                 return redirect('register')
 
         else:
+            if otp_failed_attempts >= 5:
+                _clear_registration_session(request)
+                messages.error(request, 'Too many incorrect attempts. Please register again.')
+                return redirect('register')
+
             messages.error(request, 'Invalid OTP. Please try again.')
 
     remaining_time = 0
@@ -1051,10 +1169,18 @@ class CustomPasswordResetView(PasswordResetView):
         return f'{ip_key}:expires'
 
     def _client_ip(self, request):
-        forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        remote_addr = request.META.get('REMOTE_ADDR', '')
+        trusted_ips = getattr(settings, 'TRUSTED_PROXY_IPS', [])
+        if not _is_trusted_proxy(remote_addr, trusted_ips):
+            return remote_addr
+
+        forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
         if forwarded_for:
-            return forwarded_for.split(',')[0].strip()
-        return request.META.get('REMOTE_ADDR', 'unknown')
+            hops = [h.strip() for h in forwarded_for.split(',') if h.strip()]
+            for hop in reversed(hops):
+                if not _is_trusted_proxy(hop, trusted_ips):
+                    return hop
+        return remote_addr
 
     def _format_duration(self, seconds):
         seconds = max(1, int(seconds))
@@ -1202,26 +1328,241 @@ class CustomPasswordResetView(PasswordResetView):
         return response
 
 
+def _is_trusted_proxy(ip_text, trusted_entries):
+    """Check if an IP address matches trusted proxy entries (IP or CIDR)."""
+    try:
+        ip_obj = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return False
+    for entry in trusted_entries:
+        try:
+            if "/" in entry:
+                if ip_obj in ipaddress.ip_network(entry, strict=False):
+                    return True
+            elif ip_obj == ipaddress.ip_address(entry):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def get_client_ip(request):
+    """Get client IP address safely by parsing trusted proxies."""
+    remote_addr = request.META.get('REMOTE_ADDR', 'unknown')
+    trusted_proxies = getattr(
+        settings, 'TRUSTED_PROXIES', ['127.0.0.1', '::1']
+    )
+    if not _is_trusted_proxy(remote_addr, trusted_proxies):
+        return remote_addr
+
+    forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    hops = [
+        h.strip() for h in forwarded_for.split(',') if h.strip()
+    ]
+    for hop in reversed(hops):
+        if not _is_trusted_proxy(hop, trusted_proxies):
+            return hop
+    return remote_addr
+
+
+def normalize_username(username):
+    """Normalize the username by stripping whitespace and converting to lowercase."""
+    return (username or '').strip().lower()
+
+
+def get_username_fail_count_key(username):
+    """Get the cache key for username failed login attempts."""
+    normalized = normalize_username(username)
+    digest = hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+    return f'login_fail_count:user:{digest}'
+
+
+def get_username_lockout_key(username):
+    """Get the cache key for username lockout state."""
+    normalized = normalize_username(username)
+    digest = hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+    return f'login_lockout:user:{digest}'
+
+
+def get_ip_fail_count_key(ip):
+    """Get the cache key for IP failed login attempts."""
+    digest = hashlib.sha256(ip.encode('utf-8')).hexdigest()
+    return f'login_fail_count:ip:{digest}'
+
+
+def get_ip_lockout_key(ip):
+    """Get the cache key for IP lockout state."""
+    digest = hashlib.sha256(ip.encode('utf-8')).hexdigest()
+    return f'login_lockout:ip:{digest}'
+
+
+def increment_counter(key, timeout):
+    """Increment cache value atomically or fall back safely."""
+    # DatabaseCache does not provide atomic incr, so force fallback lock.
+    is_db_cache = cache.__class__.__name__ == 'DatabaseCache'
+    if not is_db_cache:
+        try:
+            if cache.add(key, 1, timeout=timeout):
+                return 1
+            else:
+                return cache.incr(key)
+        except (ValueError, TypeError):
+            pass
+
+    lock_key = f"lock:{key}"
+    acquired = False
+    # Spin lock: attempt to acquire for up to 5 seconds
+    for _ in range(100):
+        if cache.add(lock_key, 1, timeout=10):
+            acquired = True
+            break
+        time.sleep(0.05)
+
+    if not acquired:
+        # fail closed for brute-force logic without taking down login
+        current = cache.get(key)
+        try:
+            current = int(current) if current is not None else 0
+        except (ValueError, TypeError):
+            current = 0
+        next_val = current + 1
+        cache.set(key, next_val, timeout=timeout)
+        return next_val
+
+    try:
+        val = cache.get(key)
+        try:
+            val = int(val) if val is not None else 0
+        except (ValueError, TypeError):
+            val = 0
+        val += 1
+        cache.set(key, val, timeout=timeout)
+        return val
+    finally:
+        if acquired:
+            cache.delete(lock_key)
+
+
 def login_view(request):
     if request.user.is_authenticated:
         return redirect('landing')
 
     if request.method == 'POST':
+        username = request.POST.get('username', '')
+        client_ip = get_client_ip(request)
+
+        username_lockout_key = get_username_lockout_key(username)
+        ip_lockout_key = get_ip_lockout_key(client_ip)
+
+        ip_lockout_expiry = cache.get(ip_lockout_key)
+        username_lockout_expiry = cache.get(username_lockout_key)
+
+        # 1. IP Lockout Check
+        if ip_lockout_expiry is not None:
+            remaining_seconds = ip_lockout_expiry - time.time()
+            if remaining_seconds <= 0:
+                cache.delete(ip_lockout_key)
+            else:
+                remaining_minutes = max(
+                    1, int(math.ceil(remaining_seconds / 60))
+                )
+                error_message = (
+                    f"Too many login attempts from this IP address. "
+                    f"Try again in {remaining_minutes} minutes."
+                )
+                form = AuthenticationForm(data=request.POST)
+                form.add_error(None, error_message)
+                return render(request, 'game/login.html', {'form': form})
+
+        # 2. Username Lockout Check
+        if username_lockout_expiry is not None:
+            remaining_seconds = username_lockout_expiry - time.time()
+            if remaining_seconds <= 0:
+                cache.delete(username_lockout_key)
+            else:
+                remaining_minutes = max(
+                    1, int(math.ceil(remaining_seconds / 60))
+                )
+                error_message = (
+                    f"This account is temporarily locked. "
+                    f"Try again in {remaining_minutes} minutes."
+                )
+                form = AuthenticationForm(data=request.POST)
+                form.add_error(None, error_message)
+                return render(request, 'game/login.html', {'form': form})
+
         form = AuthenticationForm(data=request.POST)
         if form.is_valid():
             user = form.get_user()
+
+            # Clear username lockout and failure counter on successful login
+            username_input = request.POST.get('username', '')
+            cache.delete(get_username_fail_count_key(username_input))
+            cache.delete(get_username_lockout_key(username_input))
+            cache.delete(get_username_fail_count_key(user.username))
+            cache.delete(get_username_lockout_key(user.username))
+
             login(request, user)
             request.session.cycle_key()  # Prevent session fixation
 
             remember_me = request.POST.get('remember_me')
-
             if remember_me:
                 request.session.set_expiry(1209600)  # 2 weeks
             else:
-                request.session.set_expiry(0)# Browser close
+                request.session.set_expiry(0)  # Browser close
 
-            messages.success(request, f'Welcome back, {user.username}! Login successful.')
+            messages.success(
+                request,
+                f'Welcome back, {user.username}! Login successful.'
+            )
             return redirect('landing')
+        else:
+            # Login failed: track failed attempts
+            username_fails = 0
+            if username:
+                username_fail_count_key = (
+                    get_username_fail_count_key(username)
+                )
+                username_fails = increment_counter(
+                    username_fail_count_key, timeout=LOCKOUT_SECONDS
+                )
+
+            ip_fail_count_key = get_ip_fail_count_key(client_ip)
+            ip_fails = increment_counter(
+                ip_fail_count_key, timeout=LOCKOUT_SECONDS
+            )
+
+            if ip_fails >= IP_MAX_FAILS:
+                lockout_expiry = time.time() + LOCKOUT_SECONDS
+                cache.set(
+                    ip_lockout_key, lockout_expiry,
+                    timeout=LOCKOUT_SECONDS
+                )
+
+                # Update error message immediately to show lockout
+                error_message = (
+                    f"Too many login attempts from this IP address. "
+                    f"Try again in {LOCKOUT_SECONDS // 60} minutes."
+                )
+                form._errors = ErrorDict()
+                form.add_error(None, error_message)
+                return render(request, 'game/login.html', {'form': form})
+
+            if username_fails >= USERNAME_MAX_FAILS:
+                lockout_expiry = time.time() + LOCKOUT_SECONDS
+                cache.set(
+                    username_lockout_key, lockout_expiry,
+                    timeout=LOCKOUT_SECONDS
+                )
+
+                # Update error message immediately to show lockout
+                error_message = (
+                    f"This account is temporarily locked. "
+                    f"Try again in {LOCKOUT_SECONDS // 60} minutes."
+                )
+                form._errors = ErrorDict()
+                form.add_error(None, error_message)
+                return render(request, 'game/login.html', {'form': form})
 
     else:
         form = AuthenticationForm()
@@ -1251,6 +1592,9 @@ def stats_view(request):
     ).exclude(mode__in=['', None])
 
     recent = user_results.order_by('-played_at')[:20]
+    progress, _ = UserProgress.objects.get_or_create(
+        user=request.user
+    )
     ai_results = user_results.filter(mode='ai')
 
     # If winner == player_color, the user won
@@ -1267,6 +1611,14 @@ def stats_view(request):
     # Handle explicit edge cases (e.g. division by zero for win rate)
     win_percentage = (user_ai_wins / ai_total * 100) if ai_total > 0 else 0
 
+    rating, _ = PlayerRating.objects.get_or_create(
+        user=request.user
+    )
+
+    history = RatingHistory.objects.filter(
+        user=request.user
+    )[:10]
+
     return render(request, 'game/stats.html', {
         'recent': recent,
         'ai_total': ai_total,
@@ -1274,6 +1626,9 @@ def stats_view(request):
         'ai_wins': ai_wins,
         'ai_draws': ai_draws,
         'win_percentage': round(win_percentage, 2),
+        'progress': progress,
+        'rating': rating,
+        'history': history,
     })
 
 @login_required
@@ -1285,11 +1640,18 @@ def leaderboard_view(request):
         "-best_streak"
     )
 
+    chess_leaderboard = PlayerRating.objects.select_related(
+        "user"
+    ).order_by(
+        "-rating"
+    )[:50]
+
     return render(
         request,
         "game/leaderboard.html",
         {
-            "leaderboard": leaderboard
+            "leaderboard": leaderboard,
+            "chess_leaderboard": chess_leaderboard,
         }
     )
 
@@ -1308,7 +1670,7 @@ def update_puzzle_stats(request):
     stats.daily_completions = data.get("daily_completions", 0)
 
     stats.save()
-    
+
     check_puzzle_achievements(
         request.user,
         stats
@@ -1321,6 +1683,36 @@ def puzzle_stats_view(request):
         "streak": 0,
         "longest_streak": 0
     })
+
+
+def get_daily_puzzle(request):
+    """Serve a puzzle corresponding to the current date."""
+    today = timezone.localdate()
+    puzzle = ChessPuzzle.objects.filter(date=today).first()
+
+    if not puzzle:
+        total_puzzles = ChessPuzzle.objects.count()
+        if total_puzzles > 0:
+            index = today.toordinal() % total_puzzles
+            puzzle = ChessPuzzle.objects.order_by('id')[index]
+
+    if not puzzle:
+        return JsonResponse({
+            "id": 0,
+            "title": "Default Puzzle",
+            "fen": "6k1/5ppp/8/8/8/8/5PPP/6KQ w - - 0 1",
+            "solution": ["g2g4"],
+            "difficulty": "medium"
+        })
+
+    return JsonResponse({
+        "id": puzzle.id,
+        "title": puzzle.title,
+        "fen": puzzle.fen,
+        "solution": puzzle.solution,
+        "difficulty": puzzle.difficulty or "medium"
+    })
+
 
 @csrf_exempt
 @require_POST
@@ -1469,6 +1861,8 @@ def confirm_delete_account(request, uidb64, token):
     )
 
     return redirect('landing')
+
+
 @csrf_exempt
 @require_POST
 def analyze_game_view(request):
@@ -1509,6 +1903,38 @@ _LESSON_NAMES = (
     "Basic Endgames",
 )
 
+LESSON_LEVELS = [
+    {
+        "id": 1,
+        "title": "Chess Fundamentals",
+        "lessons": [
+            "How Pieces Move",
+            "Check and Checkmate",
+            "Castling",
+            "Opening Principles",
+        ],
+    },
+    {
+        "id": 2,
+        "title": "Basic Tactics",
+        "lessons": [
+            "Forks",
+            "Pins",
+            "Skewers",
+            "Discovered Attacks",
+        ],
+    },
+    {
+        "id": 3,
+        "title": "Advanced Concepts",
+        "lessons": [
+            "Pawn Structures",
+            "King Safety",
+            "Piece Activity",
+            "Basic Endgames",
+        ],
+    },
+]
 
 def _lesson_name_from_slug(lesson_slug):
     for name in _LESSON_NAMES:
@@ -1523,28 +1949,35 @@ def _resolve_lesson_name(url_key):
     return _lesson_name_from_slug(url_key)
 
 
-def lessons_view(request):
-    lessons = {
-        "Beginner": [
-            "How Pieces Move",
-            "Check and Checkmate",
-            "Castling",
-            "Opening Principles",
-        ],
-        "Intermediate": [
-            "Forks",
-            "Pins",
-            "Skewers",
-            "Discovered Attacks",
-        ],
-        "Advanced": [
-            "Pawn Structures",
-            "King Safety",
-            "Piece Activity",
-            "Basic Endgames",
-        ],
-    }
+def get_unlocked_lessons(completed_lessons):
+    unlocked = set()
 
+    for level_index, level in enumerate(LESSON_LEVELS):
+        
+        lessons = level["lessons"]
+        
+        previous_level_complete = True
+
+        if level_index > 0:
+            previous_level = LESSON_LEVELS[level_index - 1]
+            previous_level_complete = all(
+                lesson in completed_lessons
+                for lesson in previous_level["lessons"]
+            )
+
+        if not previous_level_complete:
+            continue
+
+        for i, lesson in enumerate(lessons):
+            if i == 0:
+                unlocked.add(lesson)
+            elif lessons[i - 1] in completed_lessons:
+                unlocked.add(lesson)
+
+    return unlocked
+
+def lessons_view(request):
+    
     completed_lessons = []
 
     if request.user.is_authenticated:
@@ -1557,21 +1990,24 @@ def lessons_view(request):
                 flat=True
             )
         )
+        
     total_lessons = sum(
-        len(lesson_list)
-        for lesson_list in lessons.values()
+        len(level["lessons"])
+        for level in LESSON_LEVELS
     )
-
-    completed_count = len(completed_lessons)
+    
+    unlocked_lessons = get_unlocked_lessons(
+        completed_lessons
+    )
 
     return render(
         request,
         "game/lessons.html",
         {
-            "lessons": lessons,
+            "levels": LESSON_LEVELS,
+            "unlocked_lessons": unlocked_lessons,
             "completed_lessons": completed_lessons,
             "total_lessons": total_lessons,
-            "completed_count": completed_count
         }
     )
 
@@ -2330,6 +2766,12 @@ def complete_lesson(request, lesson_name):
     if lesson_name not in _LESSON_NAMES:
         raise Http404("Lesson not found")
 
+    already_completed = LessonProgress.objects.filter(
+        user=request.user,
+        lesson_name=lesson_name,
+        completed=True
+    ).exists()
+
     LessonProgress.objects.update_or_create(
         user=request.user,
         lesson_name=lesson_name,
@@ -2339,16 +2781,55 @@ def complete_lesson(request, lesson_name):
         }
     )
 
+    if not already_completed:
+        award_xp(
+            request.user,
+            25
+        )
+    
     return redirect(
         "lesson_detail",
         lesson_name=slugify(lesson_name)
     )
 
 
+def lesson_map_view(request):
+
+    completed_lessons = []
+
+    if request.user.is_authenticated:
+        completed_lessons = list(
+            LessonProgress.objects.filter(
+                user=request.user,
+                completed=True
+            ).values_list(
+                "lesson_name",
+                flat=True
+            )
+        )
+
+    unlocked_lessons = get_unlocked_lessons(
+        completed_lessons
+    )
+
+    return render(
+        request,
+        "game/lesson_map.html",
+        {
+            "levels": LESSON_LEVELS,
+            "completed_lessons": completed_lessons,
+            "unlocked_lessons": unlocked_lessons,
+        }
+    )
+
+
 @login_required
 def achievements_view(request):
-    achievements = Achievement.objects.all()
-    
+    achievements = Achievement.objects.all().order_by(
+        "category",
+        "title"
+    )
+
     unlocked = set(
         UserAchievement.objects.filter(
             user=request.user
@@ -2358,11 +2839,108 @@ def achievements_view(request):
         )
     )
 
+    featured_badges = FeaturedBadge.objects.filter(
+        user=request.user
+    ).select_related("achievement")
+
     return render(
         request,
         "game/achievements.html",
         {
             "achievements": achievements,
             "unlocked": unlocked,
+            "featured_badges": featured_badges,
         }
     )
+
+
+@login_required
+def feature_badge(request, achievement_id):
+    achievement = get_object_or_404(
+        Achievement,
+        id=achievement_id
+    )
+
+    # Only unlocked badges can be featured
+    if not UserAchievement.objects.filter(
+        user=request.user,
+        achievement=achievement
+    ).exists():
+        messages.error(
+            request,
+            "You can only feature unlocked badges."
+        )
+        return redirect("achievements")
+
+    # Maximum 3 featured badges
+    if FeaturedBadge.objects.filter(
+        user=request.user
+    ).count() >= 3:
+        messages.error(
+            request,
+            "You can only feature up to 3 badges."
+        )
+        return redirect("achievements")
+
+    FeaturedBadge.objects.get_or_create(
+        user=request.user,
+        achievement=achievement
+    )
+
+    messages.success(
+        request,
+        "Badge featured successfully."
+    )
+
+    return redirect("achievements")
+
+
+@login_required
+def remove_featured_badge(request, badge_id):
+    FeaturedBadge.objects.filter(
+        id=badge_id,
+        user=request.user
+    ).delete()
+
+    messages.success(
+        request,
+        "Featured badge removed."
+    )
+
+    return redirect("achievements")
+
+
+@login_required
+def download_badge(request, achievement_id):
+    user_achievement = get_object_or_404(
+        UserAchievement,
+        user=request.user,
+        achievement_id=achievement_id
+    )
+    try:
+        badge_path = generate_badge(
+            user_achievement
+        )
+
+        safe_filename = (
+            slugify(user_achievement.achievement.title)
+            or f"badge_{achievement_id}"
+        )
+
+        return FileResponse(
+            badge_path.open("rb"),
+            as_attachment=True,
+            filename=f"{safe_filename}.png"
+        )
+    except (
+        FileNotFoundError,
+        OSError,
+    ):
+        logger.error(
+            "Badge generation failed for achievement %s: %s",
+            achievement_id,
+        )
+
+        return HttpResponseServerError(
+            "Badge generation failed."
+        )

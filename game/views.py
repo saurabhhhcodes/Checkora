@@ -1693,14 +1693,20 @@ def stats_view(request):
     ).count()
 
     # Rating Analytics
-    highest_rating = history.aggregate(
-        Max("new_rating")
-    )["new_rating__max"] or rating.rating
+    if history.exists():
+        highest_rating = max(
+            history.aggregate(Max("new_rating"))["new_rating__max"],
+            history.aggregate(Max("old_rating"))["old_rating__max"]
+        )
 
-    lowest_rating = history.aggregate(
-        Min("new_rating")
-    )["new_rating__min"] or rating.rating
-
+        lowest_rating = min(
+            history.aggregate(Min("new_rating"))["new_rating__min"],
+            history.aggregate(Min("old_rating"))["old_rating__min"]
+        )
+    else:
+        highest_rating = rating.rating
+        lowest_rating = rating.rating
+        
     average_rating = history.aggregate(
         Avg("new_rating")
     )["new_rating__avg"] or rating.rating

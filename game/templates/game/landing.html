@@ -172,6 +172,10 @@
           <span class="gradient-text-gold">Hybrid Intelligence</span>
         </h1>
 
+        <p class="hero-tagline">
+          Play. Learn. <span class="cycle-word" id="cycleWord">Compete</span>
+        </p>
+
         <div class="hero-actions">
           <a href="{% url 'index' %}" class="btn-primary-gold">Start Game</a>
           <a href="{% url 'lessons' %}" class="btn-primary-gold" aria-label="Chess Lessons">📚 Lessons</a>
@@ -1041,6 +1045,41 @@
       });
   })();
   </script>
-    <script src="{% static 'game/js/dropdown.js' %}"></script>
+  
+  <script>
+    const words = ["Compete.", "Improve.", "Dominate.", "Achieve."];
+    let wordIndex = 0;
+    let charIndex = 0;
+    let isDeleting = false;
+    const cycleWord = document.getElementById("cycleWord");
+
+    function typeWriter() {
+        const current = words[wordIndex];
+
+        if (isDeleting) {
+            cycleWord.textContent = current.substring(0, charIndex - 1);
+            charIndex--;
+        } else {
+            cycleWord.textContent = current.substring(0, charIndex + 1);
+            charIndex++;
+        }
+
+        let speed = isDeleting ? 60 : 100;
+
+        if (!isDeleting && charIndex === current.length) {
+            speed = 1500; // pause at end
+            isDeleting = true;
+        } else if (isDeleting && charIndex === 0) {
+            isDeleting = false;
+            wordIndex = (wordIndex + 1) % words.length;
+            speed = 400; // pause before next word
+        }
+
+        setTimeout(typeWriter, speed);
+    }
+
+    typeWriter();
+  </script>
+      <script src="{% static 'game/js/dropdown.js' %}"></script>
   </body>
 </html>

@@ -500,6 +500,9 @@ DP cache is intentionally excluded to save cookie space."""
         promoted = False
         if self._is_promotion(piece, tr):
             choice = (promotion_piece or 'q').lower()
+            if choice not in {'q', 'r', 'b', 'n'}:
+                choice = 'q'
+
             new_board = self._call_engine_promote(fr, fc, tr, tc, choice)
             if new_board:
                 # C++ returned the updated board - apply it directly
@@ -507,7 +510,7 @@ DP cache is intentionally excluded to save cookie space."""
                 promoted = True
             else:
                 # Fallback: apply promotion in Python
-                self.board[tr][tc] = self._promote(piece, promotion_piece)
+                self.board[tr][tc] = self._promote(piece, choice)
                 self.board[fr][fc] = None
                 promoted = True
         else:
@@ -661,6 +664,7 @@ DP cache is intentionally excluded to save cookie space."""
         """Ask the C++ engine to validate and apply a promotion move.
 
         Returns the new 64-char board string on success, or None.
+        `choice` is expected to be pre-validated to q/r/b/n before calling.
         """
         board_str = self.serialize_board()
         rights_str = self.serialize_castling_rights()

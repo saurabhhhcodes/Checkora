@@ -1520,6 +1520,55 @@ class PromotionNotationTest(TestCase):
         self.assertEqual(notation, 'a8=Q')
 
 
+class PromotionMoveTest(SimpleTestCase):
+    """Promotion input should be normalized before engine and fallback handling."""
+
+    def setUp(self):
+        self.validate_patcher = mock.patch.object(
+            ChessGame, 'validate_move', return_value=(True, 'ok'))
+        self.mock_validate = self.validate_patcher.start()
+
+        self.engine_promote_patcher = mock.patch.object(
+            ChessGame, '_call_engine_promote', return_value=None)
+        self.mock_engine_promote = self.engine_promote_patcher.start()
+
+        self.promote_patcher = mock.patch.object(ChessGame, '_promote')
+        self.mock_promote = self.promote_patcher.start()
+        self.mock_promote.side_effect = lambda piece, choice=None: (
+            choice.upper() if piece.isupper() else choice.lower())
+
+        self.engine_patcher = mock.patch.object(ChessGame, '_call_engine')
+        self.mock_engine = self.engine_patcher.start()
+        self.mock_engine.side_effect = lambda cmd: (
+            'NOTATION a8=Q' if cmd.startswith('NOTATION') else (
+                'STATUS ok' if cmd.startswith('STATUS') else None
+            )
+        )
+
+    def tearDown(self):
+        self.validate_patcher.stop()
+        self.engine_promote_patcher.stop()
+        self.promote_patcher.stop()
+        self.engine_patcher.stop()
+
+    def test_invalid_promotion_piece_defaults_to_queen(self):
+        game = ChessGame()
+        game.board = [[None for _ in range(8)] for _ in range(8)]
+        game.board[1][0] = 'P'
+
+        success, notation, captured, status = game.make_move(
+            1, 0, 0, 0, promotion_piece='x')
+
+        self.assertTrue(success)
+        self.assertEqual(notation, 'a8=Q')
+        self.assertIsNone(captured)
+        self.assertEqual(status, 'ok')
+        self.mock_engine_promote.assert_called_once_with(1, 0, 0, 0, 'q')
+        self.mock_promote.assert_called_once_with('P', 'q')
+        self.assertEqual(game.board[0][0], 'Q')
+        self.assertIsNone(game.board[1][0])
+
+
 class InsufficientMaterialDrawTest(TestCase):
     """Test cases for insufficient material draw detection in Python engine fallback and ChessGame integration."""
 

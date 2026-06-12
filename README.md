@@ -145,6 +145,19 @@ For detailed local development setup, environment configuration, common developm
 
 This guide expands on the Quick Start instructions and provides a complete development workflow for contributors.
 
+## Testing
+
+For detailed testing instructions, see:
+
+- [Testing & QA Guide](docs/testing.md)
+
+This guide covers:
+
+- Running unit tests
+- Running Selenium tests
+- Debugging test failures
+- Contributor testing best practices
+
 ## Project Structure
 
 Checkora follows a modular project structure to separate the frontend, backend, engine logic, and documentation clearly.

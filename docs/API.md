@@ -12,6 +12,7 @@ Exceptions:
 
 * `/api/pause/`
 * `/api/analyze-game/`
+* `/api/cron/cleanup-stale-games/`
 
 These endpoints are exempt from CSRF validation.
 
@@ -521,7 +522,7 @@ Authorization: Bearer <CRON_SECRET>
 
 ## 17. Common Error Responses
 
-Several API endpoints may return the following standard error responses.
+Different endpoints may return different error payloads depending on the operation being performed. The examples below illustrate common error patterns used throughout the API but do not represent a guaranteed response schema for every endpoint.
 
 ### 400 Bad Request
 

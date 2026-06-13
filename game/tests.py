@@ -2907,23 +2907,43 @@ class ChessPuzzleDailyApiTest(TestCase):
             puzzle2.save()
 
 
-class LeaderboardAndAchievementsViewOriginalTest(TestCase):
-    """Test leaderboard and achievements views with original templates."""
+class LeaderboardAndAchievementsViewTest(TestCase):
+    """Test leaderboard and achievements views."""
 
-    def test_leaderboard_authenticated(self):
-        User.objects.create_user(username='testuser', password='Password123!', email='testuser@example.com')
-        self.client.login(username='testuser', password='Password123!')
+    def test_leaderboard_anonymous(self):
         response = self.client.get(reverse('leaderboard'))
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'game/leaderboard.html')
-        self.assertContains(response, "No leaderboard data available.")
-        self.assertContains(response, "No chess rating data available.")
+        self.assertTemplateUsed(response, 'coming_soon.html')
+        self.assertContains(response, "Leaderboard Coming Soon!")
 
-    def test_achievements_authenticated(self):
-        User.objects.create_user(username='testuser', password='Password123!', email='testuser@example.com')
-        self.client.login(username='testuser', password='Password123!')
+    def test_achievements_anonymous(self):
         response = self.client.get(reverse('achievements'))
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'game/achievements.html')
-        self.assertContains(response, "Achievements Unlocked")
-        self.assertContains(response, "No featured badges selected yet.")
+        self.assertTemplateUsed(response, 'coming_soon.html')
+        self.assertContains(response, "Achievements Coming Soon!")
+
+    def test_leaderboard_authenticated(self):
+        password = 'Password123!'
+        User.objects.create_user(
+            username='testuser',
+            password=password,
+            email='testuser@example.com'
+        )
+        self.client.login(username='testuser', password=password)
+        response = self.client.get(reverse('leaderboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'coming_soon.html')
+        self.assertContains(response, "Leaderboard Coming Soon!")
+
+    def test_achievements_authenticated(self):
+        password = 'Password123!'
+        User.objects.create_user(
+            username='testuser',
+            password=password,
+            email='testuser@example.com'
+        )
+        self.client.login(username='testuser', password=password)
+        response = self.client.get(reverse('achievements'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'coming_soon.html')
+        self.assertContains(response, "Achievements Coming Soon!")

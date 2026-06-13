@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,11 +25,16 @@ load_dotenv(BASE_DIR / '.env')
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-for-local-testing')
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'django-insecure-dev-key-for-local-testing'
+    else:
+        raise ImproperlyConfigured('SECRET_KEY environment variable is required in production')
 
 ALLOWED_HOSTS = ['.vercel.app', '*']
 
@@ -165,3 +171,5 @@ SECURE_HSTS_PRELOAD = True
 
 # Secret token for authenticating Vercel cron job requests to /api/cron/cleanup-stale-games/
 CRON_SECRET = os.environ.get('CRON_SECRET')
+if not CRON_SECRET and not DEBUG:
+    raise ImproperlyConfigured('CRON_SECRET environment variable is required in production')

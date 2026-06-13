@@ -646,7 +646,7 @@
     let replayIndex = 0;
     let replayBoard = null;
     let autoReplayInterval = null;
-
+    let isAutoReplaying = false;
     let pgnDownloadTimeout = null;
     let fenCopyTimeout = null;
     /* ==========================================================
@@ -3254,21 +3254,25 @@
             // start autoplay
             playReplayBtn.textContent = '⏸';
 
-            autoReplayInterval = setInterval(() => {
-
+            // 1. Define a function that plays a single move and schedules the next one
+            const playNextMove = () => {
+                // Check if we reached the end of the game
                 if (replayIndex >= replayMoves.length) {
-
-                    clearInterval(autoReplayInterval);
                     autoReplayInterval = null;
-
                     playReplayBtn.textContent = '▶';
-
                     return;
                 }
+
+                // Advance the index and play the move
                 replayIndex++;
                 goToReplayMove(replayIndex);
 
-            }, 1000);
+                // Schedule the NEXT move 1000ms (1 second) from now.
+                autoReplayInterval = setTimeout(playNextMove, 1000);
+            };
+
+            // 2. Kick off the chain reaction
+            autoReplayInterval = setTimeout(playNextMove, 1000);
         };
     }
 
@@ -3276,25 +3280,39 @@
         playReplayBtn.onclick = () => {
 
             if (autoReplayInterval) {
-                clearInterval(autoReplayInterval);
+                isAutoReplaying = false;
+                clearTimeout(autoReplayInterval);
                 autoReplayInterval = null;
                 playReplayBtn.textContent = '▶';
                 return;
             }
             playReplayBtn.textContent = '⏸';
+            isAutoReplaying = true;
 
-            autoReplayInterval = setInterval(() => {
+            // 1. Define the relay race function
+            const playNextMove = () => {
+                if (!isAutoReplaying) return;
 
                 if (replayIndex >= replayMoves.length) {
-                    clearInterval(autoReplayInterval);
                     autoReplayInterval = null;
+                    isAutoReplaying = false;
                     playReplayBtn.textContent = '▶';
                     return;
                 }
+
                 replayIndex++;
                 goToReplayMove(replayIndex);
 
-            }, 1000);
+                // Schedule the next move only after this one is triggered
+                if (isAutoReplaying) {
+                    autoReplayInterval = setTimeout(playNextMove, 1000);
+                }
+            };
+
+            // 2. Kick off the chain reaction
+            if (isAutoReplaying) {
+                autoReplayInterval = setTimeout(playNextMove, 1000);
+            }
         };
     }
 
@@ -4127,31 +4145,31 @@
 
     if (leaveConfirmNo) leaveConfirmNo.addEventListener('click', closeLeaveConfirm);
 
-            // Theme Switcher
-            function initThemeSwitcher() {
-                const themeBtns = document.querySelectorAll('.theme-btn');
-                const currentTheme = document.documentElement.getAttribute('data-board-theme') || 'classic';
-                document.documentElement.setAttribute('data-board-theme', currentTheme);
+    // Theme Switcher
+    function initThemeSwitcher() {
+        const themeBtns = document.querySelectorAll('.theme-btn');
+        const currentTheme = document.documentElement.getAttribute('data-board-theme') || 'classic';
+        document.documentElement.setAttribute('data-board-theme', currentTheme);
 
-                themeBtns.forEach(btn => {
-                    if (btn.dataset.theme === currentTheme) {
-                        btn.classList.add('active');
-                        btn.setAttribute('aria-pressed', 'true');
-                    }
-                    btn.onclick = () => {
-                        const theme = btn.dataset.theme;
-                        document.documentElement.setAttribute('data-board-theme', theme);
-                        localStorage.setItem('boardTheme', theme);
-                        localStorage.setItem('chessBoardTheme', theme);
-                        themeBtns.forEach(b => {
-                            b.classList.remove('active');
-                            b.setAttribute('aria-pressed', 'false');
-                        });
-                        btn.classList.add('active');
-                        btn.setAttribute('aria-pressed', 'true');
-                    };
-                });
+        themeBtns.forEach(btn => {
+            if (btn.dataset.theme === currentTheme) {
+                btn.classList.add('active');
+                btn.setAttribute('aria-pressed', 'true');
             }
+            btn.onclick = () => {
+                const theme = btn.dataset.theme;
+                document.documentElement.setAttribute('data-board-theme', theme);
+                localStorage.setItem('boardTheme', theme);
+                localStorage.setItem('chessBoardTheme', theme);
+                themeBtns.forEach(b => {
+                    b.classList.remove('active');
+                    b.setAttribute('aria-pressed', 'false');
+                });
+                btn.classList.add('active');
+                btn.setAttribute('aria-pressed', 'true');
+            };
+        });
+    }
 
     function showAssetWarning() {
         const t = document.getElementById('confirmTimerContainer');

@@ -1771,18 +1771,33 @@ def stats_view(request):
     })
 
 
+@login_required
 def leaderboard_view(request):
+    try:
+        leaderboard = PuzzleStats.objects.select_related(
+            "user"
+        ).order_by(
+            "-puzzles_solved",
+            "-best_streak"
+        )
+    except Exception:
+        leaderboard = PuzzleStats.objects.none()
+
+    try:
+        chess_leaderboard = PlayerRating.objects.select_related(
+            "user"
+        ).order_by(
+            "-rating"
+        )[:50]
+    except Exception:
+        chess_leaderboard = PlayerRating.objects.none()
+
     return render(
         request,
-        "coming_soon.html",
+        "game/leaderboard.html",
         {
-            "title": "Leaderboard",
-            "heading": "Leaderboard Coming Soon!",
-            "message": (
-                "We are currently compiling player stats and chess ratings. "
-                "Soon you'll be able to see who dominates the Checkora chess "
-                "boards. Stay tuned!"
-            ),
+            "leaderboard": leaderboard,
+            "chess_leaderboard": chess_leaderboard,
         }
     )
 
@@ -3315,18 +3330,42 @@ def lesson_map_view(request):
     )
 
 
+@login_required
 def achievements_view(request):
+    try:
+        achievements = Achievement.objects.all().order_by(
+            "category",
+            "title"
+        )
+    except Exception:
+        achievements = Achievement.objects.none()
+
+    try:
+        unlocked = set(
+            UserAchievement.objects.filter(
+                user=request.user
+            ).values_list(
+                "achievement_id",
+                flat=True
+            )
+        )
+    except Exception:
+        unlocked = set()
+
+    try:
+        featured_badges = FeaturedBadge.objects.filter(
+            user=request.user
+        ).select_related("achievement")
+    except Exception:
+        featured_badges = FeaturedBadge.objects.none()
+
     return render(
         request,
-        "coming_soon.html",
+        "game/achievements.html",
         {
-            "title": "Achievements",
-            "heading": "Achievements Coming Soon!",
-            "message": (
-                "Track your chess milestones, unlock rare badges, and "
-                "show off your achievements. This feature is currently under "
-                "development and will be available soon!"
-            ),
+            "achievements": achievements,
+            "unlocked": unlocked,
+            "featured_badges": featured_badges,
         }
     )
 

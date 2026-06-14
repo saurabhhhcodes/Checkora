@@ -63,12 +63,32 @@ Retrieves the current game state from the user's session. It is typically called
       "black_time": 600,
       "paused": true,
       "move_history": [
-        {"notation": "e4", "piece": "P", "from": [6, 4], "to": [4, 4], "color": "white"}
+        {
+          "notation": "e4",
+          "piece": "P",
+          "from": [6, 4],
+          "to": [4, 4],
+          "color": "white"
+        }
       ],
-      "captured_pieces": {"white": [], "black": []},
-      "mode": "pvp"
+      "captured_pieces": {
+        "white": [],
+        "black": []
+      },
+      "mode": "pvp",
+      "time_limit": 600,
+      "increment": 5,
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "pgn": "[Event \"Checkora Game\"]",
+      "game_status": "active",
+      "draw_reason": null,
+      "threefold_warning": false,
+      "player_color": "white",
+      "white_name": "White",
+      "black_name": "Black"
     }
     ```
+
 
 ---
 
@@ -99,9 +119,24 @@ Executes a move on the board after validating it via the C++ engine.
       "black_time": 600,
       "move_history": [...],
       "captured_pieces": {"white": [], "black": []},
-      "game_status": "active" // or 'check', 'checkmate', 'stalemate'
+      "game_status": "active",
+      "time_limit": 600,
+      "increment": 5,
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "pgn": "[Event \"Checkora Game\"]",
+      "draw_reason": null,
+      "threefold_warning": false,
+      "player_color": "white",
+      "white_name": "White",
+      "black_name": "Black"
     }
     ```
+
+    Possible values for `game_status`:
+    - `active`
+    - `check`
+    - `checkmate`
+    - `stalemate`
 *   **Error Response:**
     ```json
     {
@@ -131,28 +166,65 @@ Returns a list of all legal destination squares for a specific piece on the boar
 ---
 
 ## 4. Start New Game
+
 Resets the session and initializes a fresh game board.
 
-*   **URL:** `/api/new-game/`
-*   **Method:** `POST`
-*   **Request Body:**
-    ```json
-    {
-      "mode": "pvp" // Can be "pvp" or "ai"
-    }
-    ```
-*   **Success Response:**
-    ```json
-    {
-      "board": [[...]],
-      "current_turn": "white",
-      "move_history": [],
-      "captured_pieces": {"white": [], "black": []},
-      "mode": "pvp"
-    }
-    ```
+* **URL:** `/api/new-game/`
+* **Method:** `POST`
 
----
+### Request Parameters
+
+| Parameter    | Type    | Required | Description                                              |
+| ------------ | ------- | -------- | -------------------------------------------------------- |
+| mode         | string  | No       | Game mode: `"pvp"` or `"ai"`                             |
+| difficulty   | string  | No       | AI difficulty level. Default: `"medium"`                 |
+| fen          | string  | No       | FEN position to initialize the board from                |
+| time_limit   | integer | No       | Initial clock time in seconds for each player            |
+| increment    | integer | No       | Increment (seconds added after each move)                |
+| player_color | string  | No       | Human player's color in AI mode (`"white"` or `"black"`) |
+| white_name   | string  | No       | Display name for White                                   |
+| black_name   | string  | No       | Display name for Black                                   |
+
+### Example Request Body
+
+```json
+{
+  "mode": "ai",
+  "difficulty": "medium",
+  "time_limit": 300,
+  "increment": 3,
+  "player_color": "white",
+  "white_name": "Alice",
+  "black_name": "Checkora AI",
+  "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+}
+```
+
+### Success Response
+
+```json
+{
+  "valid": true,
+  "board": [[...]],
+  "current_turn": "white",
+  "move_history": [],
+  "captured_pieces": {
+    "white": [],
+    "black": []
+  },
+  "mode": "ai",
+  "player_color": "white",
+  "white_name": "Alice",
+  "black_name": "Checkora AI",
+  "difficulty": "medium",
+  "time_limit": 300,
+  "increment": 3,
+  "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+  "pgn": "",
+  "game_status": "active",
+  "draw_reason": null
+}
+```
 
 ## 5. Check Promotion
 Checks if a proposed pawn move will result in a promotion, allowing the frontend to display a piece selection modal *before* making the actual move request.
@@ -193,7 +265,16 @@ Asks the backend C++ engine to calculate and execute the best move for the activ
         "to_row": 3,
         "to_col": 3
       },
-      "game_status": "active"
+      "game_status": "active",
+      "time_limit": 600,
+      "increment": 5,
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "pgn": "[Event \"Checkora Game\"]",
+      "draw_reason": null,
+      "threefold_warning": false,
+      "player_color": "white",
+      "white_name": "White",
+      "black_name": "Black"
     }
     ```
 
@@ -207,9 +288,7 @@ Pauses or resumes the game clock. This endpoint is CSRF exempt to allow `navigat
 *   **Request Body:**
     ```json
     {
-      "pause": true,
-      "white_time": 550,
-      "black_time": 600
+      "pause": true
     }
     ```
 *   **Success Response:**
@@ -231,14 +310,15 @@ Allows players to offer or accept a draw agreement in PvP mode.
 *   **Request Body:**
     ```json
     {
-      "action": "offer" // Can be "offer" or "accept"
+      "action": "offer" // Can be "offer" , "accept" or "decline"
     }
     ```
 *   **Success Response:**
     ```json
     {
       "success": true,
-      "game_status": "draw_agreement" // Only present if action was "accept"
+      "game_status": "draw_agreement", // Only present if action was "accept"
+      "draw_reason": "agreement"
     }
     ```
 
@@ -554,5 +634,129 @@ Different endpoints may return different error payloads depending on the operati
 ```json
 {
   "error": "Internal server error"
+}
+```
+
+## Authentication APIs
+
+## 1. Register User
+
+Creates a new user account and sends an OTP verification code to the registered email address.
+
+* **URL:** `/register/`
+* **Method:** `POST`
+
+* **Request Body:**
+
+```json
+{
+  "username": "john_doe",
+  "email": "john@example.com",
+  "password1": "StrongPassword123",
+  "password2": "StrongPassword123"
+}
+```
+
+* **Success Response:**
+
+```json
+{
+  "message": "Verification code sent to email"
+}
+```
+
+* **Notes:**
+  - Account remains inactive until OTP verification.
+  - OTP expires after 5 minutes.
+
+
+## 2. Verify OTP
+
+Verifies the OTP sent during registration and activates the account.
+
+* **URL:** `/verify-otp/`
+* **Method:** `POST`
+
+* **Request Body:**
+
+```json
+{
+  "otp": "123456"
+}
+```
+
+* **Success Response:**
+
+```json
+{
+  "message": "Account verified successfully"
+}
+```
+
+* **Notes:**
+  - OTP expires after 5 minutes.
+  - Maximum 5 incorrect attempts allowed.
+
+
+## 3. Resend OTP
+
+Generates and sends a new OTP code.
+
+* **URL:** `/resend-otp/`
+* **Method:** `GET`
+
+* **Success Response:**
+
+```json
+{
+  "message": "A new OTP has been sent"
+}
+```
+
+* **Notes:**
+  - Cooldown: 60 seconds between OTP requests.
+
+
+## 4. Login
+
+Authenticates a user and creates a session.
+
+* **URL:** `/login/`
+* **Method:** `POST`
+
+* **Request Body:**
+
+```json
+{
+  "username": "john_doe",
+  "password": "StrongPassword123",
+  "remember_me": true
+}
+```
+
+* **Success Response:**
+
+```json
+{
+  "message": "Login successful"
+}
+```
+
+* **Notes:**
+  - Supports "Remember Me" sessions.
+  - Includes username and IP-based lockout protection.
+
+## 5. Logout
+
+Ends the current user session.
+
+* **URL:** `/logout/`
+* **Method:** `GET`
+
+* **Success Response:**
+
+```json
+{
+  "message": "Logged out successfully"
 }
 ```

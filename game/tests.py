@@ -2902,3 +2902,52 @@ class ChessPuzzleDailyApiTest(TestCase):
         )
         with self.assertRaises(ValidationError):
             puzzle2.save()
+
+
+class CustomErrorHandlerTest(TestCase):
+    """Tests for custom 404 and 500 error handlers defined in core/urls.py."""
+
+    def test_custom_404_handler_returns_correct_template_and_status(self):
+        """A request to a non-existent URL should return 404 with 404.html."""
+        response = self.client.get('/nonexistent-page-xyz123/')
+        self.assertEqual(response.status_code, 404)
+        self.assertTemplateUsed(response, '404.html')
+
+    def test_404_template_exists(self):
+        """The 404.html template file must exist in the templates directory."""
+        from django.template.loader import get_template
+        from django.template import TemplateDoesNotExist
+        try:
+            get_template('404.html')
+        except TemplateDoesNotExist:
+            self.fail('404.html template does not exist')
+
+    def test_500_template_exists(self):
+        """The 500.html template file must exist in the templates directory."""
+        from django.template.loader import get_template
+        from django.template import TemplateDoesNotExist
+        try:
+            get_template('500.html')
+        except TemplateDoesNotExist:
+            self.fail('500.html template does not exist')
+
+    def test_custom_500_handler_returns_correct_template_and_status(self):
+        """Force a 500 via a broken view, verify 500.html is rendered."""
+        from django.urls import re_path, include
+
+        module = type(__import__('sys'))('test_urls_500')
+        from django.http import HttpResponse
+
+        def broken_view(request):
+            raise ValueError("intentional 500 for test")
+
+        module.urlpatterns = [
+            re_path(r'^trigger-500/$', broken_view),
+        ]
+        module.handler500 = 'core.urls.custom_server_error'
+
+        self.client.raise_request_exception = False
+        with override_settings(ROOT_URLCONF=module, DEBUG=False):
+            response = self.client.get('/trigger-500/')
+        self.assertEqual(response.status_code, 500)
+        self.assertTemplateUsed(response, '500.html')

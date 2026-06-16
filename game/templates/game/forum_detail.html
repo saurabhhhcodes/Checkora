@@ -10,33 +10,41 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght=400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'game/css/landing.css' %}">
+    <link rel="stylesheet" href="{% static 'game/css/board.css' %}">
     <link rel="stylesheet" href="{% static 'game/css/forum.css' %}">
 </head>
 <body>
-    <nav class="navbar">
+    <nav class="forum-navbar">
         <div class="nav-left">
             <a href="{% url 'landing' %}" class="logo-link">
-                <img src="{% static 'game/checkora_icon_only.png' %}" alt="Checkora Logo" class="logo-img">
-                <span class="logo-text">CHECK<span class="logo-accent">ORA</span></span>
+                <img src="{% static 'game/checkora_icon_only.png' %}"
+                    alt="Checkora Logo"
+                    class="logo-img">
+
+                <span class="logo-text">
+                    CHECK<span class="logo-accent">ORA</span>
+                </span>
             </a>
-            <div class="nav-links">
-                <a href="{% url 'landing' %}#about">About</a>
-                <a href="{% url 'landing' %}#features">Features</a>
-                <a href="{% url 'forum' %}" class="active">Forum</a>
-            </div>
         </div>
+
         <div class="nav-right">
             {% if user.is_authenticated %}
             <div class="profile-dropdown">
-                <button type="button" class="profile-btn">{{ user.username }} ⌄</button>
+                <button type="button" class="profile-btn">
+                    {{ user.username }} ⌄
+                </button>
+
                 <div class="dropdown-content">
                     <a href="/play/">Dashboard</a>
                     <a href="/stats/">Stats</a>
                     <a href="{% url 'leaderboard' %}">Leaderboard</a>
                     <a href="{% url 'achievements' %}">Achievements</a>
+
                     <form method="post" action="{% url 'logout' %}" style="margin:0;">
                         {% csrf_token %}
-                        <button type="submit" class="logout-option">Logout</button>
+                        <button type="submit" class="logout-option">
+                            Logout
+                        </button>
                     </form>
                 </div>
             </div>

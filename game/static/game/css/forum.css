@@ -107,6 +107,53 @@
     color: var(--text-secondary);
 }
 
+.forum-home-btn {
+    display: inline-block;
+
+    margin-bottom: 1rem;
+
+    color: var(--text-secondary);
+    text-decoration: none;
+
+    font-size: 0.9rem;
+    font-weight: 600;
+
+    transition: color 0.2s ease;
+}
+
+.forum-home-btn:hover {
+    color: var(--accent-gold);
+}
+
+.forum-navbar {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    padding: 0 2rem;
+    min-height: 80px;
+
+    background: rgba(10,10,20,0.95);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+
+    box-sizing: border-box;
+}
+
+.forum-navbar .nav-left,
+.forum-navbar .nav-right {
+    display: flex;
+    align-items: center;
+}
+
+.forum-navbar .nav-left {
+    flex: 1;
+}
+
+.forum-navbar .nav-right {
+    justify-content: flex-end;
+}
+
 .forum-fab-new {
     position: fixed;
     bottom: 2rem;

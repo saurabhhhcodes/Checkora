@@ -109,7 +109,8 @@
 
                             <form method="post" action="{% url 'forum_reply_delete' reply.id %}">
                                 {% csrf_token %}
-                                <button type="submit" onclick="return confirm('Delete this reply?')">
+                                <button type="button"
+                                        onclick="openDeleteModal('{% url 'forum_reply_delete' reply.id %}')">
                                     Delete
                                 </button>
                             </form>
@@ -257,6 +258,58 @@
                 }, 1500);
             }
         }
+
+        function openDeleteModal(deleteUrl) {
+            const modal = document.getElementById("delete-modal");
+            const form = document.getElementById("delete-form");
+
+            form.action = deleteUrl;
+            modal.classList.add("active");
+        }
+
+        function closeDeleteModal() {
+            const modal = document.getElementById("delete-modal");
+            const form = document.getElementById("delete-form");
+
+            form.action = "";
+            modal.classList.remove("active");
+        }
+
+        document.addEventListener("keydown", function(event) {
+            if (event.key === "Escape") {
+                closeDeleteModal();
+            }
+        });
+
+        document.getElementById("delete-modal").addEventListener("click", function(event) {
+            if (event.target === this) {
+                closeDeleteModal();
+            }
+        });
     </script>
+    <div class="forum-delete-modal" id="delete-modal">
+        <div class="forum-delete-box">
+            <h3>Delete reply?</h3>
+
+            <p>
+                This reply will be removed from the discussion content, but a deleted comment placeholder will remain.
+            </p>
+
+            <div class="forum-delete-actions">
+                <button type="button"
+                        class="forum-delete-cancel"
+                        onclick="closeDeleteModal()">
+                    Cancel
+                </button>
+
+                <form method="post" id="delete-form">
+                    {% csrf_token %}
+                    <button type="submit" class="forum-delete-confirm">
+                        Delete
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

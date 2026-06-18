@@ -201,6 +201,19 @@ body {
     color: #ffffff;
     transform: translateY(-1px);
 }
+@media (prefers-reduced-motion: reduce) {
+  .btn-logout,
+  .btn-signin,
+  .btn-register {
+    transition: none;
+  }
+
+  .btn-logout:hover,
+  .btn-signin:hover,
+  .btn-register:hover {
+    transform: none;
+  }
+}
 .btn-signin {
     display: inline-flex;
     align-items: center;
@@ -236,6 +249,20 @@ body {
     transform: translateY(-2px);
     box-shadow: 0 10px 22px rgba(240, 192, 64, 0.3);
     filter: brightness(1.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .btn-logout,
+    .btn-signin,
+    .btn-register {
+        transition: none;
+    }
+
+    .btn-logout:hover,
+    .btn-signin:hover,
+    .btn-register:hover {
+        transform: none;
+    }
 }
 
 .profile-dropdown{

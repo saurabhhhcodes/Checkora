@@ -1,4 +1,8 @@
 from django.db import models
+from django.core.validators import (
+    MinValueValidator,
+    MaxValueValidator,
+)
 from django.conf import settings
 from django.db.models import Q
 from django.core.exceptions import ValidationError
@@ -225,7 +229,88 @@ class LessonProgress(models.Model):
             f"{self.user.username} - "
             f"{self.lesson_name}"
         )
+    
+class OpeningProgress(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="opening_progress"
+    )
+
+    opening_name = models.CharField(
+        max_length=100
+    )
+
+    openings_started = models.PositiveIntegerField(
+        default=0
+    )
+
+    openings_completed = models.PositiveIntegerField(
+        default=0
+    )
+
+    correct_moves = models.PositiveIntegerField(
+        default=0
+    )
+
+    incorrect_moves = models.PositiveIntegerField(
+        default=0
+    )
+
+    last_checkpoint = models.PositiveIntegerField(
+        default=0
+    )
+
+    completion_percentage = models.FloatField(
+        default=0,
+        validators=[
+            MinValueValidator(0),
+            MaxValueValidator(100),
+        ],
+    )
+
+    accuracy_percentage = models.FloatField(
+        default=0,
+        validators=[
+            MinValueValidator(0),
+            MaxValueValidator(100),
+        ],
+    )
+
+    last_practiced = models.DateTimeField(
+        auto_now=True
+    )
+
+    class Meta:
+        unique_together = (
+            "user",
+            "opening_name"
+        )
         
+        indexes = [
+            models.Index(
+                fields=[
+                    "user",
+                    "openings_completed",
+                ]
+            ),
+            models.Index(
+                fields=[
+                    "user",
+                    "openings_started",
+                ]
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.user.username} - "
+            f"{self.opening_name}"
+        )
+         
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 class Achievement(models.Model):
     CATEGORY_CHOICES = [
         ("gameplay", "Gameplay"),
@@ -404,3 +489,5 @@ class Reply(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.discussion.title}"
+    
+    

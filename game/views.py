@@ -51,6 +51,8 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Avg, Max, Min, Sum
 from datetime import timedelta
 
+from .opening_trainer_data import OPENINGS
+
 from .engine import ChessGame
 from .models import (
     GameResult,
@@ -63,6 +65,7 @@ from .models import (
     ChessPuzzle,
     PlayerRating,
     RatingHistory,
+    OpeningProgress,
 )
 
 from .rating_service import calculate_rating_change
@@ -85,6 +88,7 @@ from game.services import (
     check_game_achievements,
     check_puzzle_achievements,
     generate_badge,
+    update_opening_progress,
 )
 
 from django.http import FileResponse
@@ -1741,6 +1745,25 @@ def stats_view(request):
         user=request.user
     )
     
+    opening_stats = OpeningProgress.objects.filter(
+        user=request.user
+    )
+
+    completed_openings = opening_stats.filter(
+        openings_completed__gt=0
+    ).count()
+
+    average_accuracy = (
+        opening_stats.aggregate(
+            Avg("accuracy_percentage")
+        )["accuracy_percentage__avg"]
+        or 0
+    )
+
+    most_practiced = opening_stats.order_by(
+        "-openings_started"
+    ).first()
+
     return render(request, 'game/stats.html', {
         'recent': recent,
         'ai_total': ai_total,
@@ -1774,6 +1797,17 @@ def stats_view(request):
         "lesson_completion_percentage": lesson_completion_percentage,
 
         "puzzle_stats": puzzle_stats,
+        
+        "completed_openings": completed_openings,
+        "average_opening_accuracy": round(
+            average_accuracy,
+            2
+        ),
+        "most_practiced_opening": (
+            most_practiced.opening_name
+            if most_practiced
+            else "None"
+        ),
     })
 
 
@@ -3351,6 +3385,73 @@ def lesson_map_view(request):
         }
     )
 
+def opening_trainer(request):
+    return render(
+        request,
+        "game/opening_trainer.html",
+        {
+            "openings": OPENINGS,
+        }
+    )
+
+
+def opening_detail(request, slug):
+    opening = next(
+        (
+            opening
+            for opening in OPENINGS
+            if opening["slug"] == slug
+        ),
+        None,
+    )
+
+    if opening is None:
+        raise Http404("Opening not found")
+
+    return render(
+        request,
+        "game/opening_detail.html",
+        {
+            "opening": opening,
+        }
+    )
+
+@login_required
+@require_POST
+def update_opening_stats(request):
+    try:
+        data = json.loads(request.body)
+
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Invalid JSON payload",
+            },
+            status=400,
+        )
+
+    opening_name = data.get("opening_name")
+    completed = data.get("completed", False)
+    accuracy = data.get("accuracy", 0)
+
+    update_opening_progress(
+        request.user,
+        opening_name,
+        completed=completed,
+    )
+
+    if completed:
+        award_xp(request.user, 50)
+
+        if accuracy == 100:
+            award_xp(request.user, 25)
+
+    return JsonResponse({
+        "success": True,
+        "accuracy": accuracy,
+    })
+    
 @login_required
 def achievements_view(request):
     try:

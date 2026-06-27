@@ -1890,14 +1890,31 @@ def update_puzzle_stats(request):
 
 
 def puzzle_stats_view(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({
+            "streak": 0,
+            "longest_streak": 0,
+            "puzzles_solved": 0,
+            "daily_completions": 0,
+        })
+    stats = PuzzleStats.objects.filter(user=request.user).first()
+    if stats is None:
+        return JsonResponse({
+            "streak": 0,
+            "longest_streak": 0,
+            "puzzles_solved": 0,
+            "daily_completions": 0,
+        })
     return JsonResponse({
-        "streak": 0,
-        "longest_streak": 0
+        "streak": stats.current_streak,
+        "longest_streak": stats.best_streak,
+        "puzzles_solved": stats.puzzles_solved,
+        "daily_completions": stats.daily_completions,
     })
 
 
 def get_daily_puzzle(request):
-    """Serve a puzzle corresponding to the current date."""
+    """Serve a puzzle corresponding to the current date (without solution)."""
     today = timezone.localdate()
     puzzle = ChessPuzzle.objects.filter(date=today).first()
 
@@ -1912,7 +1929,6 @@ def get_daily_puzzle(request):
             "id": 0,
             "title": "Default Puzzle",
             "fen": "6k1/5ppp/8/8/8/8/5PPP/6KQ w - - 0 1",
-            "solution": ["g2g4"],
             "difficulty": "medium"
         })
 
@@ -1920,8 +1936,59 @@ def get_daily_puzzle(request):
         "id": puzzle.id,
         "title": puzzle.title,
         "fen": puzzle.fen,
-        "solution": puzzle.solution,
         "difficulty": puzzle.difficulty or "medium"
+    })
+
+
+@require_POST
+def validate_puzzle_move(request, puzzle_id):
+    """Validate a puzzle move server-side without exposing the full solution."""
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'invalid json'}, status=400)
+
+    move = data.get('move', '').strip()
+    move_index = data.get('move_index', 0)
+
+    puzzle = get_object_or_404(ChessPuzzle, id=puzzle_id)
+
+    if not isinstance(move_index, int) or move_index < 0:
+        return JsonResponse({'error': 'invalid move_index'}, status=400)
+
+    if move_index >= len(puzzle.solution):
+        return JsonResponse({'correct': False, 'solved': True}, status=400)
+
+    expected_move = puzzle.solution[move_index]
+    is_correct = move == expected_move
+
+    return JsonResponse({
+        'correct': is_correct,
+        'solved': is_correct and move_index + 1 >= len(puzzle.solution),
+    })
+
+
+@require_GET
+def puzzle_hint(request, puzzle_id):
+    """Return the source and target squares for the current puzzle step."""
+    move_index_str = request.GET.get('move_index', '0')
+    try:
+        move_index = int(move_index_str)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'invalid move_index'}, status=400)
+
+    puzzle = get_object_or_404(ChessPuzzle, id=puzzle_id)
+
+    if move_index < 0 or move_index >= len(puzzle.solution):
+        return JsonResponse({'error': 'no hint available'}, status=400)
+
+    expected_move = puzzle.solution[move_index]
+    from_square = expected_move[:2]
+    to_square = expected_move[2:4]
+
+    return JsonResponse({
+        'from': from_square,
+        'to': to_square,
     })
 
 

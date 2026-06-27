@@ -195,6 +195,36 @@
         }
     }
 
+    async function syncPuzzleStatsToServer() {
+        try {
+            const streakData = getPuzzleStreak();
+            const payload = {
+                current_streak: streakData.streak,
+                best_streak: streakData.longestStreak,
+                puzzles_solved: streakData.streak > 0 ? 1 : 0,
+                daily_completions: 1,
+            };
+            await fetch('/api/puzzle-stats/update/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+                body: JSON.stringify(payload)
+            });
+        } catch (e) {
+            console.error("Failed to sync puzzle stats to server:", e);
+        }
+    }
+
+    async function fetchPuzzleStats() {
+        try {
+            const response = await fetch('/api/puzzle-stats/');
+            if (!response.ok) return null;
+            return await response.json();
+        } catch (e) {
+            console.error("Failed to fetch puzzle stats:", e);
+            return null;
+        }
+    }
+
     function clearPuzzleHints() {
         hintLevel = 0;
 
@@ -204,42 +234,34 @@
         });
     }
 
-    function showPuzzleHint() {
+    async function showPuzzleHint() {
         if (!dailyPuzzleMode || !currentPuzzle) return;
 
-        const move = currentPuzzle.solution[puzzleMoveIndex];
+        try {
+            const response = await fetch(`/api/puzzles/${currentPuzzle.id}/hint/?move_index=${puzzleMoveIndex}`);
+            if (!response.ok) return;
+            const data = await response.json();
+            if (!data.from || !data.to) return;
 
-        if (!move) return;
+            const fromFile = data.from.charCodeAt(0) - 97;
+            const fromRank = 8 - parseInt(data.from[1], 10);
+            const toFile = data.to.charCodeAt(0) - 97;
+            const toRank = 8 - parseInt(data.to[1], 10);
 
-        const fromFile = move.charCodeAt(0) - 97;
-        const fromRank = 8 - parseInt(move[1], 10);
+            clearPuzzleHints();
+            const sourceSq = sq(fromRank, fromFile);
+            const targetSq = sq(toRank, toFile);
 
-        const toFile = move.charCodeAt(2) - 97;
-        const toRank = 8 - parseInt(move[3], 10);
-
-        clearPuzzleHints();
-        const sourceSq = sq(fromRank, fromFile);
-        const targetSq = sq(toRank, toFile);
-
-        if (hintLevel === 0) {
-
-            if (sourceSq) {
-                sourceSq.classList.add("hint-source")
-            };
-
-            hintLevel = 1;
-
-        } else if (hintLevel === 1) {
-
-            if (sourceSq) {
-                sourceSq.classList.add("hint-source");
+            if (hintLevel === 0) {
+                if (sourceSq) sourceSq.classList.add("hint-source");
+                hintLevel = 1;
+            } else if (hintLevel === 1) {
+                if (sourceSq) sourceSq.classList.add("hint-source");
+                if (targetSq) targetSq.classList.add("hint-target");
+                hintLevel = 2;
             }
-
-            if (targetSq) {
-                targetSq.classList.add("hint-target");
-            }
-
-            hintLevel = 2;
+        } catch (e) {
+            console.error("Hint fetch failed:", e);
         }
     }
 
@@ -302,13 +324,17 @@
 
     async function precalculateExpectedMoveEval() {
         if (!currentPuzzle) return;
-        const expectedMove = currentPuzzle.solution[puzzleMoveIndex];
-        if (!expectedMove) return;
         try {
+            const response = await fetch(`/api/puzzles/${currentPuzzle.id}/hint/?move_index=${puzzleMoveIndex}`);
+            if (!response.ok) return;
+            const data = await response.json();
+            if (!data.from || !data.to) return;
+
+            const expectedMove = data.from + data.to;
             if (!window.Chess) return;
             const chess = new window.Chess(currentPuzzleFen);
-            const from = expectedMove.substring(0, 2);
-            const to = expectedMove.substring(2, 4);
+            const from = data.from;
+            const to = data.to;
             const promo = expectedMove.length > 4 ? expectedMove.charAt(4) : undefined;
             chess.move({ from, to, promotion: promo });
             const expectedFen = chess.fen();
@@ -373,7 +399,6 @@
                 id: 1,
                 title: "Default Puzzle",
                 fen: "6k1/5ppp/8/8/8/8/5PPP/6KQ w - - 0 1",
-                solution: ["g2g4"],
                 difficulty: "medium"
             };
         } finally {
@@ -1597,98 +1622,70 @@
                     );
                 }
 
-                // Daily Puzzle Validation
+                // Daily Puzzle Validation (server-side)
                 if (dailyPuzzleMode && currentPuzzle && !puzzleAnalyzing) {
 
                     const playedMove =
                         `${String.fromCharCode(97 + fc)}${8 - fr}` +
                         `${String.fromCharCode(97 + tc)}${8 - tr}`;
 
-                    const expectedMove =
-                        currentPuzzle.solution[puzzleMoveIndex];
+                    puzzleAnalyzing = true;
+                    try {
+                        const validationResp = await fetch(`/api/puzzles/${currentPuzzle.id}/validate-move/`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+                            body: JSON.stringify({ move: playedMove, move_index: puzzleMoveIndex })
+                        });
+                        const validation = await validationResp.json();
 
-                    if (playedMove === expectedMove) {
+                        if (validation.correct) {
+                            puzzleAnalyzing = false;
+                            clearPuzzleHints();
+                            puzzleMoveIndex++;
+                            currentPuzzleFen = data.fen;
+                            expectedMoveEval = null;
+                            precalculateExpectedMoveEval();
 
-                        clearPuzzleHints();
-
-                        puzzleMoveIndex++;
-                        currentPuzzleFen = data.fen;
-                        expectedMoveEval = null;
-                        precalculateExpectedMoveEval();
-
-                        if (puzzleMoveIndex >= currentPuzzle.solution.length) {
-
-                            const streak = updatePuzzleStreak();
-                            updateStreakDisplay();
+                            if (validation.solved) {
+                                const streak = updatePuzzleStreak();
+                                updateStreakDisplay();
+                                syncPuzzleStatsToServer();
+                                showConfirm(
+                                    "🎉 Puzzle Solved!",
+                                    `🔥 Current Streak: ${streak}<br> 
+                                                        🏆 Best Streak: ${getPuzzleStreak().longestStreak}<br>
+                                                        Come back tomorrow for a new challenge.`,
+                                    () => {
+                                        gameLayout.style.visibility = "hidden";
+                                        welcomeOverlay.classList.add("active");
+                                    },
+                                    "#f0c040"
+                                );
+                                return;
+                            }
+                        } else {
+                            puzzleAnalyzing = false;
                             showConfirm(
-                                "🎉 Puzzle Solved!",
-                                `🔥 Current Streak: ${streak}<br> 
-                                                    🏆 Best Streak: ${getPuzzleStreak().longestStreak}<br>
-                                                    Come back tomorrow for a new challenge.`,
+                                "❌ Incorrect Move!",
+                                "Would you like to try again?",
                                 () => {
-                                    gameLayout.style.visibility = "hidden";
-                                    welcomeOverlay.classList.add("active");
+                                    startDailyPuzzle();
                                 },
-                                "#f0c040"
+                                "#ff4d4d"
                             );
                             return;
                         }
-                    } else {
-                        // Start Stockfish validation for alternative moves
-                        puzzleAnalyzing = true;
-                        const origStatus = document.getElementById("game-status") ? document.getElementById("game-status").textContent : "";
-                        showStatus("Analyzing move with Stockfish...", false);
-
-                        validateMoveWithStockfish(currentPuzzleFen, data.fen, expectedMove)
-                            .then((isCorrect) => {
-                                puzzleAnalyzing = false;
-                                showStatus(origStatus, false);
-
-                                if (isCorrect) {
-                                    puzzleMoveIndex++;
-                                    currentPuzzleFen = data.fen;
-                                    expectedMoveEval = null;
-                                    precalculateExpectedMoveEval();
-
-                                    if (puzzleMoveIndex >= currentPuzzle.solution.length) {
-                                        const streak = updatePuzzleStreak();
-                                        updateStreakDisplay();
-                                        showConfirm(
-                                            "🎉 Puzzle Solved!",
-                                            `🔥 Current Streak: ${streak}<br> 
-                                                                🏆 Best Streak: ${getPuzzleStreak().longestStreak}<br>
-                                                                Come back tomorrow for a new challenge.`,
-                                            () => {
-                                                gameLayout.style.visibility = "hidden";
-                                                welcomeOverlay.classList.add("active");
-                                            },
-                                            "#f0c040"
-                                        );
-                                    }
-                                } else {
-                                    showConfirm(
-                                        "❌ Incorrect Move!",
-                                        "Would you like to try again?",
-                                        () => {
-                                            startDailyPuzzle();
-                                        },
-                                        "#ff4d4d"
-                                    );
-                                }
-                            })
-                            .catch((err) => {
-                                console.error("Stockfish validation promise error:", err);
-                                puzzleAnalyzing = false;
-                                showStatus(origStatus, false);
-                                showConfirm(
-                                    "❌ Incorrect Move!",
-                                    "Would you like to try again?",
-                                    () => {
-                                        startDailyPuzzle();
-                                    },
-                                    "#ff4d4d"
-                                );
-                            });
+                    } catch (e) {
+                        puzzleAnalyzing = false;
+                        console.error("Puzzle validation failed:", e);
+                        showConfirm(
+                            "❌ Incorrect Move!",
+                            "Would you like to try again?",
+                            () => {
+                                startDailyPuzzle();
+                            },
+                            "#ff4d4d"
+                        );
                         return;
                     }
                 }

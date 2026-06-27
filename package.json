@@ -21,6 +21,9 @@
     "url": "https://github.com/RuchiSheoran/Checkora/issues"
   },
   "homepage": "https://github.com/RuchiSheoran/Checkora#readme",
+  "overrides": {
+    "ws": ">=8.21.0"
+  },
   "devDependencies": {
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0"

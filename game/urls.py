@@ -50,7 +50,10 @@ urlpatterns = [
     path("openings/<slug:slug>/", views.opening_detail, name="opening_detail"),
 
     path("api/puzzle-stats/", views.puzzle_stats_view, name="puzzle_stats"),
+    path("api/puzzle-stats/update/", views.update_puzzle_stats, name="update_puzzle_stats"),
     path("api/puzzles/daily/", views.get_daily_puzzle, name="daily_puzzle"),
+    path("api/puzzles/<int:puzzle_id>/validate-move/", views.validate_puzzle_move, name="validate_puzzle_move"),
+    path("api/puzzles/<int:puzzle_id>/hint/", views.puzzle_hint, name="puzzle_hint"),
     
     # Badges & Achievements
     path("achievements/", views.achievements_view, name="achievements"),

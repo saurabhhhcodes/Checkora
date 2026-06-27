@@ -6,6 +6,7 @@ from django.core.validators import (
 from django.conf import settings
 from django.db.models import Q
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 class GameResult(models.Model):
     user = models.ForeignKey(
@@ -460,9 +461,29 @@ class Discussion(models.Model):
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When set, the discussion expires after this timestamp"
+    )
 
     class Meta:
         ordering = ["-created_at"]
+
+    @property
+    def hours_remaining(self):
+        if self.expires_at is None:
+            return None
+        delta = self.expires_at - timezone.now()
+        if delta.total_seconds() <= 0:
+            return 0
+        return int(delta.total_seconds() / 3600)
+
+    @property
+    def is_expired(self):
+        if self.expires_at is None:
+            return False
+        return timezone.now() >= self.expires_at
 
     def __str__(self):
         return self.title

@@ -295,8 +295,16 @@ body {
     }
     .nav-right .btn-signin,
     .nav-right .btn-register {
+        font-size: 0.8rem;
+        padding: 6px 10px;
+        white-space: nowrap;
+    }
+    .nav-right {
+        gap: 0.5rem;
+    }
+    .profile-btn {
+        padding: 8px 10px;
         font-size: 0.85rem;
-        padding: 7px 14px;
     }
 }
 

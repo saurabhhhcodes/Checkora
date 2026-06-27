@@ -436,7 +436,7 @@ body {
 }
 
 .fen-hint {
-    color: #777;
+    color: var(--text-secondary, #aaa);
     font-size: 0.75rem;
     line-height: 1.2;
 }
@@ -1026,15 +1026,13 @@ body {
 }
 .btn-pause:active { transform: translateY(0); }
 .back-btn {
-    font-size: small;
-    background: var(--bg);
-    color: var(--bg) !important;
-    font-weight: bold;
-    margin-bottom: 2rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 600;
     text-decoration: none;
-    display: flex; 
-    justify-content: flex-start;
-    
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
 }
 
 .back-btn:hover {
@@ -1708,7 +1706,6 @@ body {
     position: absolute !important;
     top: 37px !important;
     right: 0 !important;
-     !important;
 }
 
 .promo-overlay .btn-gold {

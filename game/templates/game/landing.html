@@ -865,6 +865,70 @@
     </div>
   
     <script>
+      // --- Scroll-based nav active highlighting (#1958) ---
+      (function() {
+        const sections = document.querySelectorAll('section[id]');
+        const navLinks = document.querySelectorAll('.nav-links a[href^="#"]');
+        const mobileNavLinks = document.querySelectorAll('.mobile-nav-link[href^="#"]');
+        const allLinks = [...navLinks, ...mobileNavLinks];
+
+        function updateActiveNav() {
+          let currentId = '';
+          const scrollPos = window.scrollY + 120;
+          sections.forEach(section => {
+            if (section.offsetTop <= scrollPos && section.offsetTop + section.offsetHeight > scrollPos) {
+              currentId = section.id;
+            }
+          });
+          allLinks.forEach(link => {
+            link.classList.toggle('active', link.getAttribute('href') === '#' + currentId);
+          });
+        }
+
+        window.addEventListener('scroll', updateActiveNav, { passive: true });
+        window.addEventListener('resize', updateActiveNav, { passive: true });
+        updateActiveNav();
+      })();
+
+      // --- Counter animation via IntersectionObserver (#1959) ---
+      (function() {
+        const counters = document.querySelectorAll('.about-stat-num[data-target]');
+        if (!counters.length) return;
+
+        let countersAnimated = false;
+
+        function animateCounters() {
+          if (countersAnimated) return;
+          countersAnimated = true;
+          counters.forEach(counter => {
+            const target = parseInt(counter.getAttribute('data-target'), 10);
+            if (isNaN(target) || target <= 0) return;
+            const duration = 2000;
+            const start = performance.now();
+            function step(now) {
+              const elapsed = now - start;
+              const progress = Math.min(elapsed / duration, 1);
+              const eased = 1 - Math.pow(1 - progress, 3);
+              counter.textContent = Math.round(eased * target);
+              if (progress < 1) requestAnimationFrame(step);
+            }
+            requestAnimationFrame(step);
+          });
+        }
+
+        const observer = new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              animateCounters();
+              observer.disconnect();
+            }
+          });
+        }, { threshold: 0.3 });
+
+        const statsRow = document.querySelector('.about-stats-row') || counters[0].closest('.about-stats-row');
+        if (statsRow) observer.observe(statsRow);
+      })();
+
       const backToTopWrapper = document.getElementById('backToTopWrapper');
       window.addEventListener('scroll', () => {
         backToTopWrapper.classList.toggle('visible', window.scrollY > 300);

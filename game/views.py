@@ -488,6 +488,7 @@ def get_state(request):
         'game_status': game.game_status,
         'draw_reason': game.draw_reason,
         'threefold_warning': game.threefold_warning,
+        'last_move': game.move_history[-1] if game.move_history else None,
     })
 
 

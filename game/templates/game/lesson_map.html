@@ -455,8 +455,59 @@ background-size:60px 60px;
 
 </div>
 <script src="{% static 'game/js/roadmap_connectors.js' %}"></script>
+
+<style>
+#scrollToTopBtn {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f0c040, #d4a020);
+  color: #0f0f1a;
+  border: 1.5px solid rgba(0,0,0,0.4);
+  font-size: 1.3rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(240,192,64,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  z-index: 999;
+}
+#scrollToTopBtn.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+#scrollToTopBtn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 24px rgba(240,192,64,0.6);
+}
+#scrollToTopBtn:active {
+  transform: scale(0.92);
+}
+</style>
+
+<button type="button" id="scrollToTopBtn" aria-label="Scroll to top">↑</button>
+
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+  // Scroll to Top button (#1940)
+  (function() {
+    var btn = document.getElementById('scrollToTopBtn');
+    if (!btn) return;
+    window.addEventListener('scroll', function() {
+      btn.classList.toggle('visible', window.scrollY > 300);
+    }, { passive: true });
+    btn.addEventListener('click', function() {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  })();
+
+  document.addEventListener('DOMContentLoaded', function() {
         if (localStorage.getItem('lessons_guest_alert_dismissed') === 'true') {
             var alert = document.getElementById('guest-alert');
             if (alert) {

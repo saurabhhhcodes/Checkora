@@ -723,7 +723,7 @@
         document.getElementById("blackScore").innerText = black;
     }
 
-    // post() uses csrf()
+    // post() uses csrf() - reads token fresh from cookie on every call
     function csrf() {
         const input = document.querySelector('[name=csrfmiddlewaretoken]');
         if (input?.value) {
@@ -734,12 +734,13 @@
     }
 
     async function get(url) {
-        return (await fetch(url)).json();
+        return (await fetch(url, { credentials: 'same-origin' })).json();
     }
 
     async function post(url, body) {
         return (await fetch(url, {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': csrf()
@@ -1042,9 +1043,16 @@
         blackTime = data.black_time;
         paused = data.paused;
 
-        gameMode = data.mode || 'pvp';
+                gameMode = data.mode || 'pvp';
         // Sync UI with current game mode
         updateModeButtonsUI(gameMode);
+
+        // Restore last-move highlight from server state (#1956)
+        if (data.last_move && data.last_move.from && data.last_move.to) {
+          lastMove = { from: data.last_move.from, to: data.last_move.to };
+        } else {
+          lastMove = null;
+        }
         playerColor = data.player_color || 'white';
         currentDifficulty = data.difficulty || currentDifficulty;
 
@@ -3226,6 +3234,7 @@
         } else {
             flipped = false;
         }
+        buildBoard();
 
         if (modeBadge) {
             if (isPuzzle) {
